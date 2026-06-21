@@ -1,4 +1,4 @@
-const VERSION = 'kotobi-v9-push-payload-2026-06-20';
+const VERSION = 'kotobi-v10-auto-discover-ui-2026-06-21';
 const ASSET_CACHE = `${VERSION}-assets`;
 const IMAGE_CACHE = `${VERSION}-images`;
 const MAX_IMAGE_CACHE = 200;
@@ -95,7 +95,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => !k.startsWith(VERSION)).map((k) => caches.delete(k)));
+      await Promise.all(keys.map((k) => caches.delete(k)));
       const cache = await caches.open(ASSET_CACHE);
       await Promise.all([
         cache.delete('/favicon.ico'),
@@ -113,6 +113,8 @@ self.addEventListener('activate', (event) => {
         cache.delete('/shortcut-icon.png'),
       ]);
       await self.clients.claim();
+      const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+      await Promise.all(clientList.map((client) => client.navigate(client.url)));
     })()
   );
 });
@@ -214,34 +216,33 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // ✅ Static assets (JS/CSS/fonts): Cache-first + background refresh
-  if (sameOrigin) {
+  // ✅ ملفات التطبيق الأساسية: Network-first حتى لا تظهر نسخة قديمة بعد أي تحديث
+  const isAppShellAsset = sameOrigin && (
+    url.pathname === '/' ||
+    url.pathname.startsWith('/assets/') ||
+    /\.(js|css|mjs|json)$/i.test(url.pathname)
+  );
+  if (isAppShellAsset) {
     event.respondWith(
       (async () => {
-        const cached = await caches.match(req);
-        if (cached) {
-          event.waitUntil(
-            (async () => {
-              try {
-                const fresh = await fetch(req);
-                if (fresh && fresh.ok) {
-                  const cache = await caches.open(ASSET_CACHE);
-                  safePut(cache, req, fresh.clone());
-                }
-              } catch (_) {}
-            })()
-          );
-          return cached;
-        }
-
-        const fresh = await fetch(req);
-        if (fresh && fresh.ok) {
+        try {
+          const fresh = await fetch(req, { cache: 'no-store' });
           const cache = await caches.open(ASSET_CACHE);
           safePut(cache, req, fresh.clone());
+          return fresh;
+        } catch (_) {
+          const cached = await caches.match(req);
+          if (cached) return cached;
+          throw _;
         }
-        return fresh;
       })()
     );
+    return;
+  }
+
+  // ✅ باقي الملفات المحلية: Network-first آمن من النسخ القديمة
+  if (sameOrigin) {
+    event.respondWith(fetch(req));
     return;
   }
 

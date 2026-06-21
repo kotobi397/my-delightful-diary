@@ -767,7 +767,7 @@ const AdminBooks: React.FC = () => {
                   رفع مجمع
                 </TabsTrigger>
                 <TabsTrigger value="bulk_upload_ai" className="flex-shrink-0 text-sm md:text-lg px-4 md:px-8 whitespace-nowrap">
-                  ✨ رفع مجمع 2 (AI)
+                  ✨ رفع مجمع 2 (تلقائي)
                 </TabsTrigger>
                 <TabsTrigger value="authors" className="flex-shrink-0 text-sm md:text-lg px-4 md:px-8 whitespace-nowrap">
                   المؤلفون الموثقون
@@ -821,7 +821,7 @@ const AdminBooks: React.FC = () => {
                   fetchAllTabsCounts();
                   toast({
                     title: "تم تحديث البيانات",
-                    description: "تم تحديث قائمة الكتب المعتمدة بعد رفع AI",
+                    description: "تم تحديث قائمة الكتب المعتمدة بعد الرفع المجمع 2",
                     variant: "default"
                   });
                 }} />
