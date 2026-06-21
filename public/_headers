@@ -59,3 +59,7 @@
 /manifest.json
   Cache-Control: no-cache, no-store, must-revalidate
   Content-Type: application/manifest+json
+
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+  Service-Worker-Allowed: /
