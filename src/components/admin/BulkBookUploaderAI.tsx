@@ -484,7 +484,7 @@ const BulkBookUploaderAI: React.FC<BulkBookUploaderAIProps> = ({ onUploadComplet
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />
-            رفع مجمع 2 — بمساعدة الذكاء الاصطناعي
+            رفع مجمع 2 — رفع تلقائي من Archive.org حسب التصنيفات
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -493,8 +493,8 @@ const BulkBookUploaderAI: React.FC<BulkBookUploaderAIProps> = ({ onUploadComplet
             <AlertDescription>
               ارفع ملف CSV يحتوي على حقلين فقط: <strong>title</strong> و{' '}
               <strong>book_file_url</strong>. <strong>الغلاف يُولَّد تلقائيًا من الصفحة الأولى للـPDF</strong>.
-              الذكاء الاصطناعي يستنتج المؤلف، التصنيف، الوصف، اللغة وسنة النشر تلقائيًا. عدد الصفحات
-              يُحسب فعليًا من ملف PDF.
+              النظام يعالج الكتب المستخرجة من Archive.org ويستنتج المؤلف، التصنيف، الوصف، اللغة وسنة النشر تلقائيًا.
+              عدد الصفحات يُحسب فعليًا من ملف PDF.
               يمكنك رفع حتى <strong>{MAX_BOOKS_PER_RUN}</strong> كتاب دفعة واحدة.
             </AlertDescription>
           </Alert>
@@ -683,7 +683,7 @@ https://archive.org/download/.../روائع من التاريخ العثماني
             <AlertDescription>
               ألصق روابط <strong>صفحات الكتب</strong> على archive.org (مثال:{' '}
               <code className="text-xs">https://archive.org/details/20220728_20220728_1119</code>) — سطر لكل رابط.
-              سيقوم الذكاء الاصطناعي باستخراج رابط ملف PDF المباشر تلقائيًا (مثال:{' '}
+              سيقوم النظام باستخراج رابط ملف PDF المباشر تلقائيًا (مثال:{' '}
               <code className="text-xs">https://archive.org/download/.../file.pdf</code>) وإضافته إلى قائمة الرفع
               بدون تكرار.
             </AlertDescription>
@@ -708,7 +708,7 @@ https://archive.org/details/another-book-id`}
               ) : (
                 <>
                   <Sparkles className="ml-2 h-4 w-4" />
-                  استخراج روابط PDF بالذكاء الاصطناعي
+                  استخراج روابط PDF تلقائيًا
                 </>
               )}
             </Button>
