@@ -96,7 +96,7 @@ const BulkBookUploaderAI: React.FC<BulkBookUploaderAIProps> = ({ onUploadComplet
   const cancelRef = useRef(false);
   const { toast } = useToast();
 
-  // === استخراج روابط التحميل من صفحات archive.org عبر Mistral AI ===
+  // === استخراج روابط التحميل من صفحات archive.org بالذكاء الاصطناعي ===
   const [pageLinksText, setPageLinksText] = useState('');
   const [extracting, setExtracting] = useState(false);
   const [extractProgress, setExtractProgress] = useState({ done: 0, total: 0 });
@@ -178,7 +178,7 @@ const BulkBookUploaderAI: React.FC<BulkBookUploaderAIProps> = ({ onUploadComplet
   const discoverAndAdd = async () => {
     const q = discoverQuery.trim();
     if (!q) {
-      toast({ title: 'أدخل موضوع البحث', description: 'مثال: روايات عربية، تاريخ إسلامي، البخلاء...', variant: 'destructive' });
+      toast({ title: 'أدخل تصنيف البحث', description: 'مثال: روايات عربية، تاريخ إسلامي، أدب، فقه...', variant: 'destructive' });
       return;
     }
     setDiscovering(true);
@@ -604,16 +604,16 @@ https://archive.org/download/.../روائع من التاريخ العثماني
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Sparkles className="h-5 w-5 text-primary" />
-            اكتشاف ورفع تلقائي كامل من Archive.org عبر Mistral AI
+            اكتشاف ورفع تلقائي كامل من Archive.org حسب التصنيفات
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <Alert>
             <Sparkles className="h-4 w-4" />
             <AlertDescription>
-              فقط أدخل <strong>موضوع البحث</strong> (مثلاً: «روايات عربية» أو «تاريخ إسلامي»)، وسيقوم Mistral AI بـ:
+              أدخل <strong>تصنيف البحث</strong> (مثلاً: «روايات عربية» أو «تاريخ إسلامي»)، وسيتم البحث داخل بوابات Archive.org الواسعة بدون الاعتماد على أسماء كتب محددة:
               <br />
-              ١) البحث في archive.org وجلب <strong>روابط details</strong> تلقائيًا.
+              ١) البحث في archive.org حسب التصنيف وجلب <strong>روابط details</strong> تلقائيًا.
               <br />
               ٢) فتح كل صفحة واستخراج <strong>رابط ملف PDF المباشر</strong>.
               <br />
@@ -622,7 +622,7 @@ https://archive.org/download/.../روائع من التاريخ العثماني
           </Alert>
           <div className="grid grid-cols-1 md:grid-cols-[2fr_auto_auto] gap-3 items-end">
             <div>
-              <Label className="text-xs">موضوع البحث</Label>
+              <Label className="text-xs">تصنيف البحث</Label>
               <Input
                 value={discoverQuery}
                 onChange={(e) => setDiscoverQuery(e.target.value)}
@@ -674,7 +674,7 @@ https://archive.org/download/.../روائع من التاريخ العثماني
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Link2 className="h-4 w-4" />
-            استخراج روابط PDF تلقائيًا من صفحات archive.org عبر Mistral AI
+            استخراج روابط PDF تلقائيًا من صفحات archive.org
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -732,7 +732,7 @@ https://archive.org/details/another-book-id`}
             {!uploading ? (
               <Button onClick={startUpload} className="w-full" size="lg">
                 <Upload className="ml-2 h-5 w-5" />
-                ابدأ رفع {books.length} كتاب عبر Mistral AI (مع توليد الغلاف من الصفحة الأولى)
+                ابدأ رفع {books.length} كتاب (مع توليد الغلاف من الصفحة الأولى)
               </Button>
             ) : (
               <>
