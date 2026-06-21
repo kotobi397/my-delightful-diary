@@ -1,0 +1,447 @@
+import React, { useRef, useState } from 'react';
+import { Camera, LoaderCircle, Search, Sparkles } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Link, useNavigate } from 'react-router-dom';
+import { createBookSlug } from '@/utils/bookSlug';
+import { getCategoryInArabic } from '@/utils/categoryTranslation';
+import { supabase, supabaseFunctions } from '@/lib/supabaseClient';
+import { toast } from 'sonner';
+import { optimizeImageUrl } from '@/utils/imageProxy';
+import { AspectRatio } from '@/components/ui/aspect-ratio';
+import { Card, CardContent } from '@/components/ui/card';
+
+/* ====== SearchDialog — نافذة البحث الرئيسية ====== */
+interface SearchDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
+  const navigate = useNavigate();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [imageLoading, setImageLoading] = useState(false);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageResults, setImageResults] = useState<any[]>([]);
+  const [extractedInfo, setExtractedInfo] = useState<any>(null);
+  const [imageSearched, setImageSearched] = useState(false);
+
+  // حالة البحث الذكي بالذكاء الاصطناعي
+  const [searchTerm, setSearchTerm] = useState('');
+  const [aiResults, setAiResults] = useState<any[]>([]);
+  const [aiSearching, setAiSearching] = useState(false);
+  const [aiInterpretation, setAiInterpretation] = useState<string>('');
+  const [aiSearched, setAiSearched] = useState(false);
+
+  const runAISearch = async (q: string) => {
+    const query = q.trim();
+    if (query.length < 2) {
+      toast.error('اكتب سؤالك بوضوح (حرفان على الأقل)');
+      return;
+    }
+    setAiSearching(true);
+    setAiSearched(false);
+    setAiResults([]);
+    setAiInterpretation('');
+    try {
+      const { data, error } = await supabaseFunctions.functions.invoke('ai-library-search', {
+        body: { query, limit: 18 },
+      });
+      if (error) throw error;
+      if (data?.success) {
+        setAiResults(data.results || []);
+        setAiInterpretation(data.interpretation?.explanation || '');
+      } else {
+        toast.error(data?.error || 'تعذر إجراء البحث الذكي');
+      }
+    } catch (err: any) {
+      console.error('AI search error:', err);
+      toast.error(err?.message || 'تعذر إجراء البحث الذكي');
+    } finally {
+      setAiSearching(false);
+      setAiSearched(true);
+    }
+  };
+
+  const handleTextSearch = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    runAISearch(searchTerm);
+  };
+
+  const handleClose = () => {
+    onOpenChange(false);
+    setImagePreview(null);
+    setImageResults([]);
+    setExtractedInfo(null);
+    setImageSearched(false);
+    setSearchTerm('');
+    setAiResults([]);
+    setAiInterpretation('');
+    setAiSearched(false);
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('يرجى اختيار صورة فقط');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('حجم الصورة كبير جداً (الحد الأقصى 5 ميجابايت)');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const dataUrl = ev.target?.result as string;
+      setImagePreview(dataUrl);
+      const base64 = dataUrl.split(',')[1];
+      await searchByImage(base64);
+    };
+    reader.readAsDataURL(file);
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const searchByImage = async (imageBase64: string) => {
+    setImageLoading(true);
+    setImageResults([]);
+    setExtractedInfo(null);
+    setImageSearched(false);
+
+    try {
+      const { data, error } = await supabaseFunctions.functions.invoke('search-by-image', {
+        body: { imageBase64 },
+      });
+      if (error) throw error;
+      if (data?.success) {
+        setImageResults(data.results || []);
+        setExtractedInfo(data.extractedInfo);
+      } else {
+        toast.error(data?.error || 'حدث خطأ أثناء البحث');
+      }
+    } catch (err) {
+      console.error('Image search error:', err);
+      toast.error('حدث خطأ أثناء البحث بالصورة');
+    } finally {
+      setImageLoading(false);
+      setImageSearched(true);
+    }
+  };
+
+  const BookResultItem = ({ book, onClickAction }: { book: any; onClickAction: () => void }) => (
+    <Link
+      to={`/book/${createBookSlug(book.title, book.author)}`}
+      onClick={onClickAction}
+      className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
+    >
+      <div className="w-12 h-16 flex-shrink-0 rounded overflow-hidden bg-muted shadow-sm">
+        <img
+          src={optimizeImageUrl(book.cover_image_url || '/placeholder.svg', 'thumbnail')}
+          alt={book.title}
+          className="w-full h-full object-cover"
+          onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }}
+        />
+      </div>
+      <div className="flex-1 min-w-0">
+        <h4 className="font-semibold text-foreground text-sm truncate">{book.title}</h4>
+        <p className="text-muted-foreground text-xs truncate">{book.author}</p>
+        <p className="text-muted-foreground text-xs">{getCategoryInArabic(book.category)}</p>
+      </div>
+    </Link>
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v ? handleClose() : onOpenChange(v)}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-4" dir="rtl">
+        <DialogHeader>
+          <DialogTitle className="text-right flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-primary" />
+            البحث الذكي بالذكاء الاصطناعي
+          </DialogTitle>
+        </DialogHeader>
+
+        <p className="text-xs text-muted-foreground font-cairo">
+          اسأل بلغتك الطبيعية: "كتاب يتحدث عن مواجهة الخوف"، "روايات لنجيب محفوظ"، "أفضل كتب التنمية الذاتية"...
+        </p>
+
+
+        {/* البحث النصي + زر البحث بالصورة */}
+        <div className="flex items-center gap-2">
+          <form onSubmit={handleTextSearch} className="flex-1 flex items-center gap-2">
+            <Input
+              name="q"
+              placeholder="اسأل عن أي كتاب بلغتك الطبيعية..."
+              className="text-right flex-1"
+              autoFocus
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <Button
+              type="submit"
+              disabled={aiSearching || !searchTerm.trim()}
+              className="h-10 px-4 gap-2 flex-shrink-0"
+              title="بحث"
+            >
+              {aiSearching ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <Search className="h-4 w-4" />
+              )}
+              <span>بحث</span>
+            </Button>
+          </form>
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+          <Button
+            variant="ghost"
+            size="icon"
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="h-10 w-10 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors flex-shrink-0"
+            title="البحث بصورة الغلاف"
+          >
+            <Camera className="h-5 w-5" />
+          </Button>
+        </div>
+
+        {/* حالة البحث الذكي */}
+        {aiSearching && (
+          <div className="flex items-center justify-center py-4">
+            <LoaderCircle className="h-5 w-5 text-primary animate-spin" />
+            <span className="text-muted-foreground text-sm mr-2">الذكاء الاصطناعي يبحث عن أفضل الكتب لك...</span>
+          </div>
+        )}
+
+        {!aiSearching && aiSearched && aiResults.length > 0 && (
+          <div className="space-y-3">
+            {aiInterpretation && (
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-2 text-xs text-foreground font-cairo flex gap-2">
+                <Sparkles className="h-3.5 w-3.5 text-primary flex-shrink-0 mt-0.5" />
+                <span>{aiInterpretation}</span>
+              </div>
+            )}
+            <p className="text-sm text-muted-foreground">عثر الذكاء الاصطناعي على {aiResults.length} كتاب مناسب</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+              {aiResults.map((book) => (
+                <Link
+                  key={book.id}
+                  to={`/book/${createBookSlug(book.title, book.author)}`}
+                  onClick={handleClose}
+                  className="block h-full"
+                >
+                  <Card className="group overflow-hidden cursor-pointer bg-card text-card-foreground rounded-lg p-2 border shadow-sm hover:shadow-md h-full flex flex-col">
+                    <CardContent className="flex flex-col items-center p-0 space-y-1.5 h-full w-full">
+                      <div className="relative w-full max-w-[130px]">
+                        <AspectRatio ratio={3/4.5}>
+                          <div className="relative w-full h-full rounded-lg overflow-hidden bg-muted flex items-center justify-center">
+                            <img
+                              src={optimizeImageUrl(book.cover_image_url || '/placeholder.svg', 'cover')}
+                              alt={book.title}
+                              loading="lazy"
+                              decoding="async"
+                              className="w-full h-full object-contain"
+                              onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }}
+                            />
+                          </div>
+                        </AspectRatio>
+                      </div>
+                      <div className="flex w-full flex-1 flex-col items-center space-y-1 min-h-[64px] px-1">
+                        <p className="text-center text-card-foreground font-tajawal leading-tight line-clamp-2" style={{ fontWeight: 500, fontSize: '14px' }} title={book.title}>
+                          {book.title}
+                        </p>
+                        <p className="text-center text-primary font-tajawal line-clamp-1" style={{ fontWeight: 500, fontSize: '12px' }} title={book.author}>
+                          {book.author}
+                        </p>
+                        {book.category && (
+                          <p className="text-center text-muted-foreground font-tajawal text-xs line-clamp-1">
+                            {getCategoryInArabic(book.category)}
+                          </p>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!aiSearching && aiSearched && aiResults.length === 0 && (
+          <div className="text-center py-4">
+            <p className="text-muted-foreground text-sm">لم يجد الذكاء الاصطناعي كتباً مطابقة. جرب صياغة مختلفة.</p>
+          </div>
+        )}
+
+        {/* معاينة الصورة */}
+        {imagePreview && (
+          <div className="flex justify-center mb-4 mt-2">
+            <div className="relative w-32 h-44 rounded-lg overflow-hidden shadow-md border border-border">
+              <img src={imagePreview} alt="صورة الغلاف" className="w-full h-full object-cover" />
+            </div>
+          </div>
+        )}
+
+        {/* المعلومات المستخرجة */}
+        {extractedInfo && (extractedInfo.title || extractedInfo.author) && (
+          <div className="bg-muted/50 rounded-lg p-3 mb-4 text-sm space-y-1">
+            <p className="text-muted-foreground font-medium">المعلومات المستخرجة:</p>
+            {extractedInfo.title && (
+              <p>📖 العنوان: <span className="font-semibold text-foreground">{extractedInfo.title}</span></p>
+            )}
+            {extractedInfo.author && (
+              <p>✍️ المؤلف: <span className="font-semibold text-foreground">{extractedInfo.author}</span></p>
+            )}
+          </div>
+        )}
+
+        {/* تحميل */}
+        {imageLoading && (
+          <div className="flex flex-col items-center py-8 gap-3">
+            <LoaderCircle className="h-8 w-8 text-primary animate-spin" />
+            <p className="text-muted-foreground text-sm">جاري تحليل الصورة والبحث...</p>
+          </div>
+        )}
+
+        {/* نتائج البحث بالصورة */}
+        {!imageLoading && imageSearched && imageResults.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">تم العثور على {imageResults.length} نتيجة</p>
+            {imageResults.map((book) => (
+              <Link
+                key={book.id}
+                to={`/book/${createBookSlug(book.title, book.author)}`}
+                onClick={handleClose}
+                className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
+              >
+                <div className="w-12 h-16 flex-shrink-0 rounded overflow-hidden bg-muted shadow-sm">
+                  <img
+                    src={optimizeImageUrl(book.cover_image_url || '/placeholder.svg', 'thumbnail')}
+                    alt={book.title}
+                    className="w-full h-full object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }}
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-semibold text-foreground text-sm truncate">{book.title}</h4>
+                  <p className="text-muted-foreground text-xs truncate">{book.author}</p>
+                  <p className="text-muted-foreground text-xs">{getCategoryInArabic(book.category)}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+
+        {/* لا نتائج */}
+        {!imageLoading && imageSearched && imageResults.length === 0 && (
+          <div className="text-center py-8">
+            <p className="text-muted-foreground">لم يتم العثور على كتب مطابقة</p>
+            <p className="text-muted-foreground text-sm mt-1">جرب صورة أوضح للغلاف</p>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ====== ImageSearchButton — زر البحث بالصورة المستقل ====== */
+export function ImageSearchButton() {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [results, setResults] = useState<any[]>([]);
+  const [extractedInfo, setExtractedInfo] = useState<any>(null);
+  const [searched, setSearched] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast.error('يرجى اختيار صورة فقط'); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error('حجم الصورة كبير جداً (الحد الأقصى 5 ميجابايت)'); return; }
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const dataUrl = ev.target?.result as string;
+      setPreview(dataUrl);
+      setOpen(true);
+      const base64 = dataUrl.split(',')[1];
+      await searchByImage(base64);
+    };
+    reader.readAsDataURL(file);
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const searchByImage = async (imageBase64: string) => {
+    setLoading(true); setResults([]); setExtractedInfo(null); setSearched(false);
+    try {
+      const { data, error } = await supabaseFunctions.functions.invoke('search-by-image', { body: { imageBase64 } });
+      if (error) throw error;
+      if (data?.success) { setResults(data.results || []); setExtractedInfo(data.extractedInfo); }
+      else { toast.error(data?.error || 'حدث خطأ أثناء البحث'); }
+    } catch (err) { console.error('Image search error:', err); toast.error('حدث خطأ أثناء البحث بالصورة'); }
+    finally { setLoading(false); setSearched(true); }
+  };
+
+  const handleClose = () => { setOpen(false); setPreview(null); setResults([]); setExtractedInfo(null); setSearched(false); };
+
+  return (
+    <>
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+      <Button variant="ghost" size="icon" onClick={() => fileRef.current?.click()}
+        className="h-10 w-10 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors" title="البحث بصورة الغلاف">
+        <Camera className="h-5 w-5" />
+      </Button>
+      <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" dir="rtl">
+          <DialogHeader><DialogTitle className="text-right">🔍 البحث بصورة الغلاف</DialogTitle></DialogHeader>
+          {preview && (
+            <div className="flex justify-center mb-4">
+              <div className="relative w-32 h-44 rounded-lg overflow-hidden shadow-md border border-border">
+                <img src={preview} alt="صورة الغلاف" className="w-full h-full object-cover" />
+              </div>
+            </div>
+          )}
+          {extractedInfo && (extractedInfo.title || extractedInfo.author) && (
+            <div className="bg-muted/50 rounded-lg p-3 mb-4 text-sm space-y-1">
+              <p className="text-muted-foreground font-medium">المعلومات المستخرجة:</p>
+              {extractedInfo.title && <p>📖 العنوان: <span className="font-semibold text-foreground">{extractedInfo.title}</span></p>}
+              {extractedInfo.author && <p>✍️ المؤلف: <span className="font-semibold text-foreground">{extractedInfo.author}</span></p>}
+            </div>
+          )}
+          {loading && (
+            <div className="flex flex-col items-center py-8 gap-3">
+              <LoaderCircle className="h-8 w-8 text-primary animate-spin" />
+              <p className="text-muted-foreground text-sm">جاري تحليل الصورة والبحث...</p>
+            </div>
+          )}
+          {!loading && searched && results.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">تم العثور على {results.length} نتيجة</p>
+              {results.map((book) => (
+                <Link key={book.id} to={`/book/${createBookSlug(book.title, book.author)}`} onClick={handleClose}
+                  className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors">
+                  <div className="w-12 h-16 flex-shrink-0 rounded overflow-hidden bg-muted shadow-sm">
+                    <img src={optimizeImageUrl(book.cover_image_url || '/placeholder.svg', 'thumbnail')} alt={book.title} className="w-full h-full object-cover"
+                      onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-semibold text-foreground text-sm truncate">{book.title}</h4>
+                    <p className="text-muted-foreground text-xs truncate">{book.author}</p>
+                    <p className="text-muted-foreground text-xs">{getCategoryInArabic(book.category)}</p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+          {!loading && searched && results.length === 0 && (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">لم يتم العثور على كتب مطابقة</p>
+              <p className="text-muted-foreground text-sm mt-1">جرب صورة أوضح للغلاف</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}

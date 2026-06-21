@@ -1,0 +1,61 @@
+/*.xml
+  Content-Type: application/xml; charset=utf-8
+  Cache-Control: public, max-age=3600
+
+/sitemap.xml
+  Content-Type: application/xml; charset=utf-8
+  Cache-Control: public, max-age=3600
+
+/static-sitemap.xml
+  Content-Type: application/xml; charset=utf-8
+  Cache-Control: public, max-age=3600
+
+/favicon.png
+  Cache-Control: no-cache, no-store, must-revalidate
+  Content-Type: image/png
+
+/favicon.ico
+  Cache-Control: no-cache, no-store, must-revalidate
+  Clear-Site-Data: "cache"
+  Content-Type: image/x-icon
+
+/kotobi-icon-2026.ico
+  Cache-Control: no-cache, no-store, must-revalidate
+  Clear-Site-Data: "cache"
+  Content-Type: image/x-icon
+
+/kotobi-icon-2026.png
+  Cache-Control: no-cache, no-store, must-revalidate
+  Content-Type: image/png
+
+/favicon-16x16.png
+  Cache-Control: no-cache, no-store, must-revalidate
+  Content-Type: image/png
+
+/favicon-32x32.png
+  Cache-Control: no-cache, no-store, must-revalidate
+  Content-Type: image/png
+
+/android-chrome-192x192.png
+  Cache-Control: no-cache, no-store, must-revalidate
+  Content-Type: image/png
+
+/android-chrome-512x512.png
+  Cache-Control: no-cache, no-store, must-revalidate
+  Content-Type: image/png
+
+/apple-touch-icon.png
+  Cache-Control: no-cache, no-store, must-revalidate
+  Content-Type: image/png
+
+/shortcut-icon.png
+  Cache-Control: no-cache, no-store, must-revalidate
+  Content-Type: image/png
+
+/mstile-150x150.png
+  Cache-Control: no-cache, no-store, must-revalidate
+  Content-Type: image/png
+
+/manifest.json
+  Cache-Control: no-cache, no-store, must-revalidate
+  Content-Type: application/manifest+json

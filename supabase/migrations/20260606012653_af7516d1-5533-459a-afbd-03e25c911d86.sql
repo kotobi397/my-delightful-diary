@@ -1,0 +1,2 @@
+ALTER TABLE public.book_quizzes ADD COLUMN IF NOT EXISTS quiz_type TEXT NOT NULL DEFAULT 'qcm';
+CREATE INDEX IF NOT EXISTS idx_book_quizzes_lookup ON public.book_quizzes (book_id, difficulty, question_count, quiz_type);

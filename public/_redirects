@@ -1,0 +1,12 @@
+# Cloudflare Pages redirects (compatible format)
+
+# Redirect old domain to new domain
+https://kotobi.netlify.app/* https://kotobi.xyz/:splat 301!
+https://kutubi-platform.pages.dev/* https://kotobi.xyz/:splat 301!
+
+# Handle image and file proxy functions BEFORE SPA fallback
+/i/*     /i/:splat     200
+/f/*     /f/:splat     200
+
+# SPA fallback — handle all remaining routes to index.html for React Router
+/*       /index.html   200
