@@ -195,14 +195,14 @@ function App() {
     startPeriodicCleanup();
     installRoutePrefetcher();
 
-    // تسجيل Service Worker بدون إعادة تحميل تلقائية للصفحة.
-    // إعادة التحميل التلقائية عند controllerchange كانت تسبب تحديث الصفحة
-    // عدة مرات أثناء التصفح والكتابة في المحادثات. التحديث الجديد لـ SW
-    // سيُطبَّق بهدوء عند أول تنقل طبيعي للمستخدم.
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', async () => {
         try {
-          await navigator.serviceWorker.register('/sw.js');
+          const registration = await navigator.serviceWorker.register('/sw.js');
+          await registration.update();
+          if (registration.waiting) {
+            registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+          }
         } catch (e) {
           console.log('SW registration failed:', e);
         }
