@@ -159,12 +159,12 @@ const AutoDiscoverPanel: React.FC = () => {
         </div>
 
         <div className="rounded-lg border p-3 bg-background space-y-2">
-          <Label className="text-sm font-bold">وضع الاكتشاف الذكي</Label>
+          <Label className="text-sm font-bold">وضع البحث بالتصنيفات</Label>
           <div className="text-sm text-muted-foreground leading-6">
-            لا يحتاج النظام الآن إلى قائمة كلمات. Mistral AI يولّد عناوين حقيقية تلقائياً، ثم يبحث في بوابات Archive.org الواسعة ويتجنب الروابط والعناوين المكررة قبل إضافتها للطابور.
+            النظام يبحث في Archive.org حسب <strong>التصنيفات</strong> (روايات، قصص، شعر، أدب، تاريخ، فلسفة، فقه، تفسير، حديث، عقيدة، تصوف، نحو، بلاغة، علم نفس، اجتماع، سياسة، اقتصاد، قانون، تربية، طب، علوم، فلك، حاسوب، فنون، أطفال، خيال علمي، بوليسية، رعب، تراث... وأكثر من 50 تصنيفاً) بدلاً من أسماء الكتب، ويتنقل بينها تلقائياً لجلب آلاف الكتب. يتم استبعاد الكتب المرفوعة مسبقاً أو الموجودة في الطابور.
           </div>
           <Badge variant="secondary" className="text-xs">
-            الجولة الحالية: {((cfg?.current_query_index ?? 0) % 30) + 1}/30 موضوع تلقائي
+            التصنيف الحالي: {((cfg?.current_query_index ?? 0) % 50) + 1}/50+ تصنيف
           </Badge>
         </div>
 
