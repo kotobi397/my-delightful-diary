@@ -198,13 +198,15 @@ function App() {
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', async () => {
         try {
-          const registration = await navigator.serviceWorker.register('/sw.js');
-          await registration.update();
-          if (registration.waiting) {
-            registration.waiting.postMessage({ type: 'SKIP_WAITING' });
-          }
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.allSettled(
+            registrations
+              .filter((registration) => new URL(registration.scope).pathname === '/')
+              .filter((registration) => registration.active?.scriptURL.endsWith('/sw.js'))
+              .map((registration) => registration.unregister())
+          );
         } catch (e) {
-          console.log('SW registration failed:', e);
+          console.log('Old app cache cleanup failed:', e);
         }
       });
     }
