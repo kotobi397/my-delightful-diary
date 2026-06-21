@@ -267,15 +267,74 @@ serve(async (req) => {
       });
     }
 
-    // 3) تحضير استعلام تلقائي قوي بالكامل.
-    // لم نعد نعتمد على قائمة كلمات يكتبها المستخدم؛ النظام يدوّر داخلياً بين بوابات واسعة وموثوقة.
-    const AUTO_DISCOVERY_QUERIES = [
-      `collection:booksbylanguage_arabic AND mediatype:texts AND format:PDF`,
-      `language:Arabic AND mediatype:texts AND format:PDF`,
-      `(collection:opensource_arabic OR collection:ArabicBooks OR collection:booksbylanguage_arabic) AND mediatype:texts AND format:PDF`,
-      `(subject:Arabic OR subject:العربية OR subject:اسلام OR subject:تاريخ OR subject:ادب) AND mediatype:texts AND format:PDF`,
-      `(creator:* OR title:*) AND language:Arabic AND mediatype:texts AND format:PDF`,
+    // 3) تحضير استعلام تلقائي قوي بالكامل — البحث عبر *التصنيفات* لا عبر أسماء كتب.
+    // كل عنصر هنا = تصنيف (subject) في archive.org داخل مجموعة الكتب العربية.
+    // النظام يدوّر بين كل التصنيفات تلقائياً، ومع cursor لكل تصنيف يصل إلى آلاف الكتب
+    // لكل تصنيف (وبالتالي عشرات الآلاف إجمالاً). منع التكرار يتم عبر filterAlreadyKnown
+    // الذي يتحقق من approved_books + bulk_upload_queue + book_submissions قبل أي إدراج.
+    const ARABIC_BASE = "collection:booksbylanguage_arabic AND mediatype:texts AND format:PDF";
+    const SUBJECT_CATEGORIES: Array<{ label: string; terms: string[] }> = [
+      { label: "روايات", terms: ["روايات", "رواية", "Novels", "Arabic fiction", "Fiction"] },
+      { label: "قصص", terms: ["قصص", "قصة قصيرة", "Short stories", "Stories"] },
+      { label: "شعر", terms: ["شعر", "ديوان", "Poetry", "Arabic poetry"] },
+      { label: "أدب", terms: ["أدب", "ادب", "Literature", "Arabic literature"] },
+      { label: "نقد أدبي", terms: ["نقد أدبي", "نقد ادبي", "Literary criticism"] },
+      { label: "مسرح", terms: ["مسرح", "مسرحية", "Drama", "Theatre", "Plays"] },
+      { label: "تاريخ", terms: ["تاريخ", "History", "Arab history", "Islamic history"] },
+      { label: "سيرة وتراجم", terms: ["سيرة", "تراجم", "Biography", "Biographies"] },
+      { label: "رحلات وجغرافيا", terms: ["رحلات", "جغرافيا", "Travel", "Geography"] },
+      { label: "فلسفة", terms: ["فلسفة", "Philosophy", "Islamic philosophy"] },
+      { label: "علم النفس", terms: ["علم النفس", "Psychology"] },
+      { label: "علم الاجتماع", terms: ["علم الاجتماع", "اجتماع", "Sociology"] },
+      { label: "سياسة", terms: ["سياسة", "Politics", "Political science"] },
+      { label: "اقتصاد", terms: ["اقتصاد", "Economics", "Business"] },
+      { label: "إدارة", terms: ["إدارة", "ادارة", "Management"] },
+      { label: "قانون", terms: ["قانون", "Law", "Sharia law"] },
+      { label: "تربية وتعليم", terms: ["تربية", "تعليم", "Education", "Pedagogy"] },
+      { label: "تنمية ذاتية", terms: ["تنمية ذاتية", "تطوير الذات", "Self-help", "Self help"] },
+      { label: "إسلاميات", terms: ["إسلام", "اسلام", "Islam", "Islamic"] },
+      { label: "فقه", terms: ["فقه", "Fiqh", "Islamic jurisprudence"] },
+      { label: "تفسير وعلوم القرآن", terms: ["تفسير", "علوم القرآن", "Quran", "Tafsir"] },
+      { label: "حديث", terms: ["حديث", "السنة", "Hadith", "Sunnah"] },
+      { label: "عقيدة وكلام", terms: ["عقيدة", "علم الكلام", "Aqidah", "Theology"] },
+      { label: "تصوف", terms: ["تصوف", "Sufism", "Tasawwuf"] },
+      { label: "سيرة نبوية", terms: ["السيرة النبوية", "سيرة نبوية", "Seerah"] },
+      { label: "أديان مقارنة", terms: ["أديان", "ديانات", "Comparative religion", "Religions"] },
+      { label: "لغة عربية", terms: ["اللغة العربية", "لغة عربية", "Arabic language"] },
+      { label: "نحو وصرف", terms: ["نحو", "صرف", "Arabic grammar", "Grammar"] },
+      { label: "بلاغة", terms: ["بلاغة", "Rhetoric"] },
+      { label: "معاجم وقواميس", terms: ["معجم", "قاموس", "Dictionary", "Dictionaries"] },
+      { label: "ترجمة", terms: ["ترجمة", "Translation", "Translated"] },
+      { label: "علوم", terms: ["علوم", "Science", "Sciences"] },
+      { label: "رياضيات", terms: ["رياضيات", "Mathematics", "Math"] },
+      { label: "فيزياء", terms: ["فيزياء", "Physics"] },
+      { label: "كيمياء", terms: ["كيمياء", "Chemistry"] },
+      { label: "أحياء", terms: ["أحياء", "احياء", "Biology"] },
+      { label: "فلك", terms: ["فلك", "Astronomy"] },
+      { label: "طب", terms: ["طب", "Medicine", "Medical"] },
+      { label: "هندسة", terms: ["هندسة", "Engineering"] },
+      { label: "حاسوب وتقنية", terms: ["حاسوب", "كمبيوتر", "Computer", "Technology", "Computing"] },
+      { label: "زراعة", terms: ["زراعة", "Agriculture"] },
+      { label: "فنون", terms: ["فنون", "Art", "Arts"] },
+      { label: "موسيقى", terms: ["موسيقى", "Music"] },
+      { label: "كتب أطفال", terms: ["أطفال", "اطفال", "Children", "Children books"] },
+      { label: "طبخ", terms: ["طبخ", "طعام", "Cooking", "Cookery"] },
+      { label: "رياضة", terms: ["رياضة", "Sports"] },
+      { label: "خيال علمي", terms: ["خيال علمي", "Science fiction", "Sci-fi"] },
+      { label: "روايات بوليسية", terms: ["بوليسية", "Mystery", "Detective", "Crime"] },
+      { label: "رعب", terms: ["رعب", "Horror"] },
+      { label: "روايات تاريخية", terms: ["روايات تاريخية", "Historical fiction"] },
+      { label: "تراث", terms: ["تراث", "Heritage", "Classical Arabic"] },
     ];
+    function buildSubjectQuery(terms: string[]): string {
+      const parts = terms
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .map((t) => /[\u0600-\u06FF]/.test(t) ? `subject:"${t}"` : `subject:(${t})`);
+      return `(${parts.join(" OR ")}) AND ${ARABIC_BASE}`;
+    }
+    const AUTO_DISCOVERY_QUERIES: string[] = SUBJECT_CATEGORIES.map((c) => buildSubjectQuery(c.terms));
+    const AUTO_DISCOVERY_LABELS: string[] = SUBJECT_CATEGORIES.map((c) => c.label);
     const queriesList: string[] = AUTO_DISCOVERY_QUERIES;
     const totalQueries = queriesList.length;
     let queryIndex = ((config.current_query_index ?? 0) % totalQueries + totalQueries) % totalQueries;
@@ -979,8 +1038,8 @@ serve(async (req) => {
       }
     }
 
-    const currentKw = queriesList[queryIndex];
-    const nextKw = queriesList[nextIndex];
+    const currentKw = AUTO_DISCOVERY_LABELS[queryIndex] ?? queriesList[queryIndex];
+    const nextKw = AUTO_DISCOVERY_LABELS[nextIndex] ?? queriesList[nextIndex];
 
     // 6) تحديث المؤشر والإحصاءات
     await supabase.from("auto_discover_config").update({
