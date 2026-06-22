@@ -283,15 +283,15 @@ Deno.serve(async (req) => {
           knownIds.add(doc.identifier);
 
           for (let i = 0; i < chapters.length; i++) {
-            const content = chapters[i];
+            const cleaned = await cleanWithMistral(chapters[i]);
             const { error: chErr } = await supabase.from('story_chapters').insert({
               story_id: story.id,
               chapter_number: i + 1,
               title: `الفصل ${i + 1}`,
-              content,
+              content: cleaned,
               is_published: true,
               published_at: new Date().toISOString(),
-              word_count: wordCount(content),
+              word_count: wordCount(cleaned),
             });
             if (chErr) {
               errors.push(`chapter ${i + 1}: ${chErr.message}`);
@@ -299,6 +299,7 @@ Deno.serve(async (req) => {
               createdChapters++;
             }
           }
+
           imported = true;
           break;
         }
