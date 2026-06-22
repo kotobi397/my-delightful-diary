@@ -960,10 +960,11 @@ serve(async (req) => {
       if (!cursor) { exhausted = true; break; }
     }
 
-    // إذا كانت صفحة scrape الحالية كلها مكررة، اقفز إلى صفحة عشوائية من Archive.
-    // هذا يمنع الدوران حول أول 100 نتيجة قديمة موجودة لدينا مسبقاً.
-    if (fresh.length === 0 && Date.now() - STARTED_AT < MAX_MS) {
-      try {
+    // إذا لم تكتمل دفعة الـ 100 من مسار scrape، املأ الباقي بقفزات عشوائية من Archive.
+    // هذا يمنع الاكتفاء بعدد قليل عندما تكون الصفحات الأولى مكررة أو ضعيفة.
+    if (fresh.length < targetFresh && Date.now() - STARTED_AT < MAX_MS) {
+      for (let randomAttempt = 0; randomAttempt < 8 && fresh.length < targetFresh && Date.now() - STARTED_AT < MAX_MS; randomAttempt++) {
+        try {
         const randomPage = 2 + Math.floor(Math.random() * 2500);
         const advancedUrl = new URL("https://archive.org/advancedsearch.php");
         advancedUrl.searchParams.set("q", archiveQuery);
@@ -1020,8 +1021,9 @@ serve(async (req) => {
             else console.warn("[auto-discover random] insert error:", insErr.message);
           }
         }
-      } catch (e) {
-        console.warn("[auto-discover random] fallback failed", (e as Error).message);
+        } catch (e) {
+          console.warn("[auto-discover random] fallback failed", (e as Error).message);
+        }
       }
     }
 
