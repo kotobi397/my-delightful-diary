@@ -13,6 +13,7 @@ import { Upload, Download, Sparkles, FileText, Plus, Trash2, Play, Pause, X, Che
 import Papa from 'papaparse';
 import BackgroundQueuePanel from './BackgroundQueuePanel';
 import AutoDiscoverPanel from './AutoDiscoverPanel';
+import AutoStoryGeneratorPanel from './AutoStoryGeneratorPanel';
 
 interface SimpleBook {
   title: string;
@@ -599,6 +600,8 @@ https://archive.org/download/.../روائع من التاريخ العثماني
       </Card>
 
       <AutoDiscoverPanel />
+
+      <AutoStoryGeneratorPanel />
 
       <Card className="border-primary/40">
         <CardHeader>
