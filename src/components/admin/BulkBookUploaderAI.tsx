@@ -481,6 +481,8 @@ const BulkBookUploaderAI: React.FC<BulkBookUploaderAIProps> = ({ onUploadComplet
 
   return (
     <div className="space-y-6" dir="rtl">
+      <AutoStoryGeneratorPanel />
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
