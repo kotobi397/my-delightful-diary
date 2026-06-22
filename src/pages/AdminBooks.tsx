@@ -26,6 +26,7 @@ import TextExtractionManager from '@/components/admin/TextExtractionManager';
 import BulkEmailManager from '@/components/admin/BulkEmailManager';
 import S3MigrationStatus from '@/components/admin/S3MigrationStatus';
 import ViewsBoostManager from '@/components/admin/ViewsBoostManager';
+import AutoStoryGeneratorPanel from '@/components/admin/AutoStoryGeneratorPanel';
 import { optimizeImageUrl } from '@/utils/imageProxy';
 
 
@@ -799,6 +800,9 @@ const AdminBooks: React.FC = () => {
                 <TabsTrigger value="views_boost" className="flex-shrink-0 text-sm md:text-lg px-4 md:px-8 whitespace-nowrap">
                   📈 تعزيز المشاهدات
                 </TabsTrigger>
+                <TabsTrigger value="auto_stories" className="flex-shrink-0 text-sm md:text-lg px-4 md:px-8 whitespace-nowrap">
+                  📖 قصص تلقائية
+                </TabsTrigger>
               </TabsList>
             </div>
             
@@ -843,6 +847,8 @@ const AdminBooks: React.FC = () => {
                 <S3MigrationStatus />
               ) : activeTab === 'views_boost' ? (
                 <ViewsBoostManager />
+              ) : activeTab === 'auto_stories' ? (
+                <AutoStoryGeneratorPanel />
               ) : (
                 bookSubmissions.length > 0 ? (
                   <div className="grid grid-cols-1 gap-8">
