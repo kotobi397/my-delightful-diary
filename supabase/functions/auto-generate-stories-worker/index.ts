@@ -324,10 +324,7 @@ async function runWorker(): Promise<{ ok: boolean; stories: number; chapters: nu
       })
       .eq('id', 1);
 
-    return new Response(
-      JSON.stringify({ ok: true, stories: createdStories, chapters: createdChapters, errors }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    );
+    return { ok: true, stories: createdStories, chapters: createdChapters, errors };
   } catch (e) {
     await supabase
       .from('auto_story_config')
@@ -337,9 +334,23 @@ async function runWorker(): Promise<{ ok: boolean; stories: number; chapters: nu
         last_error: (e as Error).message.slice(0, 500),
       })
       .eq('id', 1);
-    return new Response(JSON.stringify({ error: (e as Error).message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return { ok: false, stories: 0, chapters: 0, errors: [(e as Error).message] };
   }
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+
+  // Run in background so the request returns immediately;
+  // Mistral cleanup of multiple chapters can take >60s.
+  const task = runWorker().catch((e) => console.error('worker error', e));
+  if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime?.waitUntil) {
+    EdgeRuntime.waitUntil(task);
+  }
+
+  return new Response(
+    JSON.stringify({ started: true, message: 'يتم التوليد في الخلفية، تابع الحالة من لوحة الإدارة.' }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+  );
 });
+
