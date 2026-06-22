@@ -846,7 +846,7 @@ serve(async (req) => {
 
     const STARTED_AT = Date.now();
     const MAX_MS = 115_000;
-    const MAX_PAGES = 12;
+    const MAX_PAGES = 15;
     let cursor: string | null = shouldResetCursor ? null : config.cursor;
     let totalScanned = 0;
     let totalAlreadyKnown = 0;
@@ -895,7 +895,7 @@ serve(async (req) => {
         continue;
       }
 
-      const CONCURRENCY = 10;
+      const CONCURRENCY = 24;
       let idx = 0;
       let skippedByTitle = 0;
       const pageFresh: Array<{ title: string; book_file_url: string; identifier: string; author: string | null; cover_image_url: string | null }> = [];
@@ -1001,7 +1001,7 @@ serve(async (req) => {
               pageFresh.push({ title: book.title, book_file_url: book.url, identifier: it.identifier, author: book.author, cover_image_url: book.coverUrl });
             }
           }
-          await Promise.all(Array.from({ length: 10 }, () => randomWorker()));
+          await Promise.all(Array.from({ length: 24 }, () => randomWorker()));
           if (pageFresh.length > 0) {
             const batchLabel = `auto-random-100-${new Date().toISOString().slice(0, 19)}`;
             const rows = pageFresh.map((b) => ({
