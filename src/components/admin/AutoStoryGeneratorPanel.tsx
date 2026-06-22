@@ -201,15 +201,10 @@ const AutoStoryGeneratorPanel: React.FC = () => {
               onBlur={() => save({ min_chapter_words: cfg.min_chapter_words })}
             />
           </div>
-          <div>
-            <Label>نموذج Mistral</Label>
-            <Input
-              value={cfg.model}
-              onChange={(e) => setCfg({ ...cfg, model: e.target.value })}
-              onBlur={() => save({ model: cfg.model })}
-              placeholder="mistral-small-latest"
-            />
-          </div>
+        </div>
+
+        <div>
+          <Label>كلمات البحث في Archive.org (سطر لكل عبارة)</Label>
         </div>
 
         <div>
