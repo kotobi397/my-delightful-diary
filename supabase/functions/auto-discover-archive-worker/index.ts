@@ -448,18 +448,20 @@ serve(async (req) => {
     // الشرط: يجب أن يحتوي العنوان على حروف عربية حقيقية (مجموعة الكتب عربية).
     function looksLikeRealArabicTitle(t: string): boolean {
       const s = (t || "").toString().trim();
-      if (s.length < 3 || s.length > 220) return false;
-      const arabicLetters = (s.match(/[\u0600-\u06FF]/g) || []).length;
-      // يجب أن يحتوي على حرفين عربيين على الأقل
-      if (arabicLetters < 3) return false;
-      if (arabicLetters / Math.max(s.length, 1) < 0.35) return false;
-      if (/[_.]{2,}|\d{4,}|^[\d\W_]+$/.test(s)) return false;
+      if (s.length < 3 || s.length > 240) return false;
       if (/\.(pdf|epub|djvu|txt|zip|rar|jpg|png)$/i.test(s)) return false;
       if (/^(scan|file|book|document|unknown|untitled|pdf|img|page|archive)[\s_\-\d]*$/i.test(s)) return false;
-      // رفض تكرار الحرف نفسه 5 مرات (مثل ااااااا)
       if (/(.)\1{4,}/.test(s)) return false;
-      return true;
+      if (/^[\d\W_]+$/.test(s)) return false;
+      const arabicLetters = (s.match(/[\u0600-\u06FF]/g) || []).length;
+      const latinLetters = (s.match(/[a-zA-Z]/g) || []).length;
+      // قبول العنوان إذا كان فيه ≥ حرفين عربيين، أو على الأقل ≥ 4 أحرف لاتينية ضمن
+      // اسم منطقي يحتوي مسافة (كي لا نقبل أسماء ملفات Latin مدمجة).
+      if (arabicLetters >= 2) return true;
+      if (latinLetters >= 4 && /\s/.test(s) && s.length <= 180) return true;
+      return false;
     }
+
 
     function cleanArchiveTitle(t: string): string {
       return (t || "")
@@ -514,9 +516,10 @@ serve(async (req) => {
       try {
         const r = await fetch(`https://archive.org/metadata/${encodeURIComponent(identifier)}`, {
           headers: { "User-Agent": "KotobiAutoDiscovery/1.0" },
-          signal: AbortSignal.timeout(8_000),
+          signal: AbortSignal.timeout(5_000),
         });
         if (!r.ok) return null;
+
         const meta = await r.json();
         const metaTitleRaw = meta?.metadata?.title;
         const metaTitle = Array.isArray(metaTitleRaw) ? metaTitleRaw[0] : metaTitleRaw;
@@ -856,116 +859,152 @@ serve(async (req) => {
     const fresh: Array<{ title: string; book_file_url: string; identifier: string; author: string | null; cover_image_url: string | null }> = [];
     const insertedUrls = new Set<string>();
 
-    for (let page = 0; page < MAX_PAGES; page++) {
-      if (fresh.length >= targetFresh) break;
-      if (Date.now() - STARTED_AT > MAX_MS) break;
+    // ★ نتنقل بين عدة تصنيفات داخل نفس التشغيل حتى نملأ دفعة الـ 100،
+    //    بدل التوقف عند تصنيف واحد ينتج 0 كتاب جديد.
+    let activeCategoryHops = 0;
+    const MAX_CATEGORY_HOPS = Math.min(8, totalQueries);
 
-      const scrapeUrl = new URL("https://archive.org/services/search/v1/scrape");
-      scrapeUrl.searchParams.set("q", archiveQuery);
-      scrapeUrl.searchParams.set("fields", "identifier,title,creator");
-      scrapeUrl.searchParams.set("count", String(scrapeCount));
-      scrapeUrl.searchParams.set("sorts", chosenSort);
-      if (cursor) scrapeUrl.searchParams.set("cursor", cursor);
+    while (
+      fresh.length < targetFresh &&
+      Date.now() - STARTED_AT < MAX_MS &&
+      activeCategoryHops < MAX_CATEGORY_HOPS
+    ) {
+      for (let page = 0; page < MAX_PAGES; page++) {
+        if (fresh.length >= targetFresh) break;
+        if (Date.now() - STARTED_AT > MAX_MS) break;
 
-      const archRes = await fetch(scrapeUrl.toString(), {
-        headers: { "User-Agent": "KotobiAutoDiscovery/1.0" },
-        signal: AbortSignal.timeout(12_000),
-      });
-      if (!archRes.ok) {
-        const txt = await archRes.text();
-        throw new Error(`archive.org HTTP ${archRes.status}: ${txt.slice(0, 200)}`);
-      }
-      let archData = await archRes.json();
-      const items: Array<{ identifier: string; title: string | string[]; creator?: string | string[] }> =
-        Array.isArray(archData?.items) ? archData.items : [];
-      if (items.length === 0 && archData?.request_error && page === 0) {
-        console.warn(`[auto-discover] archive sort returned no hits (${chosenSort}): ${archData.request_error}`);
-      }
-      cursor = archData?.cursor || null;
-      totalScanned += items.length;
+        const scrapeUrl = new URL("https://archive.org/services/search/v1/scrape");
+        scrapeUrl.searchParams.set("q", archiveQuery);
+        scrapeUrl.searchParams.set("fields", "identifier,title,creator");
+        scrapeUrl.searchParams.set("count", String(scrapeCount));
+        scrapeUrl.searchParams.set("sorts", chosenSort);
+        if (cursor) scrapeUrl.searchParams.set("cursor", cursor);
 
-      if (items.length === 0) { exhausted = true; break; }
+        let archData: any = null;
+        try {
+          const archRes = await fetch(scrapeUrl.toString(), {
+            headers: { "User-Agent": "KotobiAutoDiscovery/1.0" },
+            signal: AbortSignal.timeout(12_000),
+          });
+          if (!archRes.ok) {
+            const txt = await archRes.text();
+            console.warn(`[auto-discover] archive scrape HTTP ${archRes.status} on page ${page}: ${txt.slice(0, 120)}`);
+            cursor = null;
+            break;
+          }
+          archData = await archRes.json();
+        } catch (e) {
+          console.warn(`[auto-discover] archive scrape fetch error on page ${page}: ${(e as Error).message}`);
+          cursor = null;
+          break;
+        }
+        const items: Array<{ identifier: string; title: string | string[]; creator?: string | string[] }> =
+          Array.isArray(archData?.items) ? archData.items : [];
+        if (items.length === 0 && archData?.request_error && page === 0) {
+          console.warn(`[auto-discover] archive sort returned no hits (${chosenSort}): ${archData.request_error}`);
+        }
+        cursor = archData?.cursor || null;
+        totalScanned += items.length;
 
-      const ids = items.map((it) => it.identifier);
-      const known = await filterAlreadyKnown(ids);
-      totalAlreadyKnown += known.size;
-      const unknownItems = items.filter((it) => !known.has(it.identifier));
-      if (unknownItems.length === 0) {
-        if (!cursor) { exhausted = true; break; }
-        continue;
-      }
+        if (items.length === 0) { exhausted = true; break; }
 
-      const CONCURRENCY = 24;
-      let idx = 0;
-      let skippedByTitle = 0;
-      const pageFresh: Array<{ title: string; book_file_url: string; identifier: string; author: string | null; cover_image_url: string | null }> = [];
-      async function worker() {
-        while (idx < unknownItems.length) {
-          if (fresh.length + pageFresh.length >= targetFresh) return;
-          const i = idx++;
-          const it = unknownItems[i];
-          const fallbackTitle = (Array.isArray(it.title) ? it.title[0] : it.title) || "";
-          const fallbackAuthorRaw = Array.isArray(it.creator) ? it.creator[0] : it.creator;
-          const fallbackAuthor = fallbackAuthorRaw ? String(fallbackAuthorRaw).trim() : null;
-          const book = await resolveBook(it.identifier, fallbackTitle, fallbackAuthor);
-          if (book) {
-            // كشف التكرار حسب العنوان المُطبَّع (يتجنب نفس الكتاب برابط مختلف)
-            const norm = normalizeTitle(book.title);
-            if (norm.length >= 4 && sessionTitles.has(norm)) {
-              skippedByTitle++;
-              continue;
+
+        const ids = items.map((it) => it.identifier);
+        const known = await filterAlreadyKnown(ids);
+        totalAlreadyKnown += known.size;
+        const unknownItems = items.filter((it) => !known.has(it.identifier));
+        if (unknownItems.length === 0) {
+          if (!cursor) { exhausted = true; break; }
+          continue;
+        }
+
+        const CONCURRENCY = 50;
+        let idx = 0;
+        let skippedByTitle = 0;
+        const pageFresh: Array<{ title: string; book_file_url: string; identifier: string; author: string | null; cover_image_url: string | null }> = [];
+        async function worker() {
+          while (idx < unknownItems.length) {
+            if (fresh.length + pageFresh.length >= targetFresh) return;
+            const i = idx++;
+            const it = unknownItems[i];
+            const fallbackTitle = (Array.isArray(it.title) ? it.title[0] : it.title) || "";
+            const fallbackAuthorRaw = Array.isArray(it.creator) ? it.creator[0] : it.creator;
+            const fallbackAuthor = fallbackAuthorRaw ? String(fallbackAuthorRaw).trim() : null;
+            const book = await resolveBook(it.identifier, fallbackTitle, fallbackAuthor);
+            if (book) {
+              const norm = normalizeTitle(book.title);
+              if (norm.length >= 4 && sessionTitles.has(norm)) {
+                skippedByTitle++;
+                continue;
+              }
+              if (!insertedUrls.has(book.url)) {
+                insertedUrls.add(book.url);
+                if (norm.length >= 4) sessionTitles.add(norm);
+                pageFresh.push({
+                  title: book.title,
+                  book_file_url: book.url,
+                  identifier: it.identifier,
+                  author: book.author,
+                  cover_image_url: book.coverUrl,
+                });
+              }
+            } else {
+              totalSkippedNoTitle++;
             }
-            if (!insertedUrls.has(book.url)) {
-              insertedUrls.add(book.url);
-              if (norm.length >= 4) sessionTitles.add(norm); // امنع التكرار داخل نفس التشغيل
-              pageFresh.push({
-                title: book.title,
-                book_file_url: book.url,
-                identifier: it.identifier,
-                author: book.author,
-                cover_image_url: book.coverUrl,
-              });
-            }
-          } else {
-            totalSkippedNoTitle++;
           }
         }
-      }
-      await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
-      totalAlreadyKnown += skippedByTitle; // اعتبر تكرار العنوان أيضاً كـ "معروف"
+        await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
+        totalAlreadyKnown += skippedByTitle;
 
-      if (pageFresh.length > 0) {
-          const batchLabel = `auto-100-${new Date().toISOString().slice(0, 19)}`;
-        const rows = pageFresh.map((b) => ({
-          title: b.title,
-          book_file_url: b.book_file_url,
-          cover_image_url: b.cover_image_url,
-          source_author: b.author,
-          status: "pending",
-          attempts: 0,
-          max_attempts: 3,
-          created_by_email: "auto-discover@kotobi.local",
-          batch_label: batchLabel,
-        }));
-        const { error: insErr } = await supabase
-          .from("bulk_upload_queue")
-          .insert(rows);
-        if (!insErr) {
-          fresh.push(...pageFresh);
-        } else {
-          console.warn("[auto-discover] insert error:", insErr.message);
+        if (pageFresh.length > 0) {
+            const batchLabel = `auto-100-${new Date().toISOString().slice(0, 19)}`;
+          const rows = pageFresh.map((b) => ({
+            title: b.title,
+            book_file_url: b.book_file_url,
+            cover_image_url: b.cover_image_url,
+            source_author: b.author,
+            status: "pending",
+            attempts: 0,
+            max_attempts: 3,
+            created_by_email: "auto-discover@kotobi.local",
+            batch_label: batchLabel,
+          }));
+          const { error: insErr } = await supabase
+            .from("bulk_upload_queue")
+            .insert(rows);
+          if (!insErr) {
+            fresh.push(...pageFresh);
+          } else {
+            console.warn("[auto-discover] insert error:", insErr.message);
+          }
         }
+
+        if (!cursor) { exhausted = true; break; }
       }
 
-      if (!cursor) { exhausted = true; break; }
+      // إذا لم تكتمل الدفعة، انتقل للتصنيف التالي داخل نفس التشغيل وأعد المحاولة
+      if (fresh.length < targetFresh && Date.now() - STARTED_AT < MAX_MS) {
+        activeCategoryHops++;
+        queryIndex = (queryIndex + 1) % totalQueries;
+        archiveQuery = queriesList[queryIndex] || archiveQuery;
+        cursor = null;
+        exhausted = false;
+        console.log(`[auto-discover] hopping to next category #${queryIndex} (${AUTO_DISCOVERY_LABELS[queryIndex] || ""}) — collected ${fresh.length}/${targetFresh}`);
+      } else {
+        break;
+      }
     }
+
 
     // إذا لم تكتمل دفعة الـ 100 من مسار scrape، املأ الباقي بقفزات عشوائية من Archive.
     // هذا يمنع الاكتفاء بعدد قليل عندما تكون الصفحات الأولى مكررة أو ضعيفة.
     if (fresh.length < targetFresh && Date.now() - STARTED_AT < MAX_MS) {
-      for (let randomAttempt = 0; randomAttempt < 8 && fresh.length < targetFresh && Date.now() - STARTED_AT < MAX_MS; randomAttempt++) {
+      for (let randomAttempt = 0; randomAttempt < 20 && fresh.length < targetFresh && Date.now() - STARTED_AT < MAX_MS; randomAttempt++) {
         try {
-        const randomPage = 2 + Math.floor(Math.random() * 2500);
+        // قفزة عشوائية عميقة لاكتشاف كتب لم نلمسها (DB فيه >31k كتاب من الصفحات الأولى).
+        const randomPage = 50 + Math.floor(Math.random() * 1500);
+
+
         const advancedUrl = new URL("https://archive.org/advancedsearch.php");
         advancedUrl.searchParams.set("q", archiveQuery);
         advancedUrl.searchParams.append("fl[]", "identifier");
