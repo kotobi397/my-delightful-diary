@@ -436,6 +436,57 @@ export type Database = {
         }
         Relationships: []
       }
+      auto_story_config: {
+        Row: {
+          chapters_per_story: number
+          created_at: string
+          enabled: boolean
+          id: number
+          language: string
+          last_error: string | null
+          last_run_at: string | null
+          last_status: string | null
+          min_chapter_words: number
+          model: string
+          stories_per_run: number
+          topics: Json
+          total_generated: number
+          updated_at: string
+        }
+        Insert: {
+          chapters_per_story?: number
+          created_at?: string
+          enabled?: boolean
+          id?: number
+          language?: string
+          last_error?: string | null
+          last_run_at?: string | null
+          last_status?: string | null
+          min_chapter_words?: number
+          model?: string
+          stories_per_run?: number
+          topics?: Json
+          total_generated?: number
+          updated_at?: string
+        }
+        Update: {
+          chapters_per_story?: number
+          created_at?: string
+          enabled?: boolean
+          id?: number
+          language?: string
+          last_error?: string | null
+          last_run_at?: string | null
+          last_status?: string | null
+          min_chapter_words?: number
+          model?: string
+          stories_per_run?: number
+          topics?: Json
+          total_generated?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       banned_users: {
         Row: {
           ban_type: string
