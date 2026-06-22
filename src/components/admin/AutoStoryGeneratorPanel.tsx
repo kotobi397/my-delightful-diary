@@ -205,19 +205,15 @@ const AutoStoryGeneratorPanel: React.FC = () => {
 
         <div>
           <Label>كلمات البحث في Archive.org (سطر لكل عبارة)</Label>
-        </div>
-
-        <div>
-          <Label>قائمة المواضيع (سطر لكل موضوع)</Label>
           <Textarea
             rows={6}
             value={topicsText}
             onChange={(e) => setTopicsText(e.target.value)}
-            placeholder="رحلة في الصحراء&#10;قصة حب في الأندلس&#10;سر المكتبة القديمة"
+            placeholder="قصة&#10;حكاية شعبية&#10;رواية قصيرة&#10;أدب أطفال"
           />
           <div className="flex justify-end mt-2">
             <Button size="sm" variant="outline" onClick={saveTopics} disabled={saving}>
-              حفظ المواضيع
+              حفظ
             </Button>
           </div>
         </div>
