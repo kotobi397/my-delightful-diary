@@ -856,121 +856,142 @@ serve(async (req) => {
     const fresh: Array<{ title: string; book_file_url: string; identifier: string; author: string | null; cover_image_url: string | null }> = [];
     const insertedUrls = new Set<string>();
 
-    for (let page = 0; page < MAX_PAGES; page++) {
-      if (fresh.length >= targetFresh) break;
-      if (Date.now() - STARTED_AT > MAX_MS) break;
+    // ★ نتنقل بين عدة تصنيفات داخل نفس التشغيل حتى نملأ دفعة الـ 100،
+    //    بدل التوقف عند تصنيف واحد ينتج 0 كتاب جديد.
+    let activeCategoryHops = 0;
+    const MAX_CATEGORY_HOPS = Math.min(8, totalQueries);
 
-      const scrapeUrl = new URL("https://archive.org/services/search/v1/scrape");
-      scrapeUrl.searchParams.set("q", archiveQuery);
-      scrapeUrl.searchParams.set("fields", "identifier,title,creator");
-      scrapeUrl.searchParams.set("count", String(scrapeCount));
-      scrapeUrl.searchParams.set("sorts", chosenSort);
-      if (cursor) scrapeUrl.searchParams.set("cursor", cursor);
+    while (
+      fresh.length < targetFresh &&
+      Date.now() - STARTED_AT < MAX_MS &&
+      activeCategoryHops < MAX_CATEGORY_HOPS
+    ) {
+      for (let page = 0; page < MAX_PAGES; page++) {
+        if (fresh.length >= targetFresh) break;
+        if (Date.now() - STARTED_AT > MAX_MS) break;
 
-      let archData: any = null;
-      try {
-        const archRes = await fetch(scrapeUrl.toString(), {
-          headers: { "User-Agent": "KotobiAutoDiscovery/1.0" },
-          signal: AbortSignal.timeout(12_000),
-        });
-        if (!archRes.ok) {
-          const txt = await archRes.text();
-          console.warn(`[auto-discover] archive scrape HTTP ${archRes.status} on page ${page}: ${txt.slice(0, 120)}`);
-          // عند 5xx من archive.org نُصفّر cursor ونتوقف عن مسار scrape فوراً
-          // كي يعمل مسار advancedsearch بالأسفل (fallback) ويملأ الـ 100.
+        const scrapeUrl = new URL("https://archive.org/services/search/v1/scrape");
+        scrapeUrl.searchParams.set("q", archiveQuery);
+        scrapeUrl.searchParams.set("fields", "identifier,title,creator");
+        scrapeUrl.searchParams.set("count", String(scrapeCount));
+        scrapeUrl.searchParams.set("sorts", chosenSort);
+        if (cursor) scrapeUrl.searchParams.set("cursor", cursor);
+
+        let archData: any = null;
+        try {
+          const archRes = await fetch(scrapeUrl.toString(), {
+            headers: { "User-Agent": "KotobiAutoDiscovery/1.0" },
+            signal: AbortSignal.timeout(12_000),
+          });
+          if (!archRes.ok) {
+            const txt = await archRes.text();
+            console.warn(`[auto-discover] archive scrape HTTP ${archRes.status} on page ${page}: ${txt.slice(0, 120)}`);
+            cursor = null;
+            break;
+          }
+          archData = await archRes.json();
+        } catch (e) {
+          console.warn(`[auto-discover] archive scrape fetch error on page ${page}: ${(e as Error).message}`);
           cursor = null;
           break;
         }
-        archData = await archRes.json();
-      } catch (e) {
-        console.warn(`[auto-discover] archive scrape fetch error on page ${page}: ${(e as Error).message}`);
-        cursor = null;
-        break;
-      }
-      const items: Array<{ identifier: string; title: string | string[]; creator?: string | string[] }> =
-        Array.isArray(archData?.items) ? archData.items : [];
-      if (items.length === 0 && archData?.request_error && page === 0) {
-        console.warn(`[auto-discover] archive sort returned no hits (${chosenSort}): ${archData.request_error}`);
-      }
-      cursor = archData?.cursor || null;
-      totalScanned += items.length;
+        const items: Array<{ identifier: string; title: string | string[]; creator?: string | string[] }> =
+          Array.isArray(archData?.items) ? archData.items : [];
+        if (items.length === 0 && archData?.request_error && page === 0) {
+          console.warn(`[auto-discover] archive sort returned no hits (${chosenSort}): ${archData.request_error}`);
+        }
+        cursor = archData?.cursor || null;
+        totalScanned += items.length;
 
-      if (items.length === 0) { exhausted = true; break; }
+        if (items.length === 0) { exhausted = true; break; }
 
 
-      const ids = items.map((it) => it.identifier);
-      const known = await filterAlreadyKnown(ids);
-      totalAlreadyKnown += known.size;
-      const unknownItems = items.filter((it) => !known.has(it.identifier));
-      if (unknownItems.length === 0) {
-        if (!cursor) { exhausted = true; break; }
-        continue;
-      }
+        const ids = items.map((it) => it.identifier);
+        const known = await filterAlreadyKnown(ids);
+        totalAlreadyKnown += known.size;
+        const unknownItems = items.filter((it) => !known.has(it.identifier));
+        if (unknownItems.length === 0) {
+          if (!cursor) { exhausted = true; break; }
+          continue;
+        }
 
-      const CONCURRENCY = 24;
-      let idx = 0;
-      let skippedByTitle = 0;
-      const pageFresh: Array<{ title: string; book_file_url: string; identifier: string; author: string | null; cover_image_url: string | null }> = [];
-      async function worker() {
-        while (idx < unknownItems.length) {
-          if (fresh.length + pageFresh.length >= targetFresh) return;
-          const i = idx++;
-          const it = unknownItems[i];
-          const fallbackTitle = (Array.isArray(it.title) ? it.title[0] : it.title) || "";
-          const fallbackAuthorRaw = Array.isArray(it.creator) ? it.creator[0] : it.creator;
-          const fallbackAuthor = fallbackAuthorRaw ? String(fallbackAuthorRaw).trim() : null;
-          const book = await resolveBook(it.identifier, fallbackTitle, fallbackAuthor);
-          if (book) {
-            // كشف التكرار حسب العنوان المُطبَّع (يتجنب نفس الكتاب برابط مختلف)
-            const norm = normalizeTitle(book.title);
-            if (norm.length >= 4 && sessionTitles.has(norm)) {
-              skippedByTitle++;
-              continue;
+        const CONCURRENCY = 24;
+        let idx = 0;
+        let skippedByTitle = 0;
+        const pageFresh: Array<{ title: string; book_file_url: string; identifier: string; author: string | null; cover_image_url: string | null }> = [];
+        async function worker() {
+          while (idx < unknownItems.length) {
+            if (fresh.length + pageFresh.length >= targetFresh) return;
+            const i = idx++;
+            const it = unknownItems[i];
+            const fallbackTitle = (Array.isArray(it.title) ? it.title[0] : it.title) || "";
+            const fallbackAuthorRaw = Array.isArray(it.creator) ? it.creator[0] : it.creator;
+            const fallbackAuthor = fallbackAuthorRaw ? String(fallbackAuthorRaw).trim() : null;
+            const book = await resolveBook(it.identifier, fallbackTitle, fallbackAuthor);
+            if (book) {
+              const norm = normalizeTitle(book.title);
+              if (norm.length >= 4 && sessionTitles.has(norm)) {
+                skippedByTitle++;
+                continue;
+              }
+              if (!insertedUrls.has(book.url)) {
+                insertedUrls.add(book.url);
+                if (norm.length >= 4) sessionTitles.add(norm);
+                pageFresh.push({
+                  title: book.title,
+                  book_file_url: book.url,
+                  identifier: it.identifier,
+                  author: book.author,
+                  cover_image_url: book.coverUrl,
+                });
+              }
+            } else {
+              totalSkippedNoTitle++;
             }
-            if (!insertedUrls.has(book.url)) {
-              insertedUrls.add(book.url);
-              if (norm.length >= 4) sessionTitles.add(norm); // امنع التكرار داخل نفس التشغيل
-              pageFresh.push({
-                title: book.title,
-                book_file_url: book.url,
-                identifier: it.identifier,
-                author: book.author,
-                cover_image_url: book.coverUrl,
-              });
-            }
-          } else {
-            totalSkippedNoTitle++;
           }
         }
-      }
-      await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
-      totalAlreadyKnown += skippedByTitle; // اعتبر تكرار العنوان أيضاً كـ "معروف"
+        await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
+        totalAlreadyKnown += skippedByTitle;
 
-      if (pageFresh.length > 0) {
-          const batchLabel = `auto-100-${new Date().toISOString().slice(0, 19)}`;
-        const rows = pageFresh.map((b) => ({
-          title: b.title,
-          book_file_url: b.book_file_url,
-          cover_image_url: b.cover_image_url,
-          source_author: b.author,
-          status: "pending",
-          attempts: 0,
-          max_attempts: 3,
-          created_by_email: "auto-discover@kotobi.local",
-          batch_label: batchLabel,
-        }));
-        const { error: insErr } = await supabase
-          .from("bulk_upload_queue")
-          .insert(rows);
-        if (!insErr) {
-          fresh.push(...pageFresh);
-        } else {
-          console.warn("[auto-discover] insert error:", insErr.message);
+        if (pageFresh.length > 0) {
+            const batchLabel = `auto-100-${new Date().toISOString().slice(0, 19)}`;
+          const rows = pageFresh.map((b) => ({
+            title: b.title,
+            book_file_url: b.book_file_url,
+            cover_image_url: b.cover_image_url,
+            source_author: b.author,
+            status: "pending",
+            attempts: 0,
+            max_attempts: 3,
+            created_by_email: "auto-discover@kotobi.local",
+            batch_label: batchLabel,
+          }));
+          const { error: insErr } = await supabase
+            .from("bulk_upload_queue")
+            .insert(rows);
+          if (!insErr) {
+            fresh.push(...pageFresh);
+          } else {
+            console.warn("[auto-discover] insert error:", insErr.message);
+          }
         }
+
+        if (!cursor) { exhausted = true; break; }
       }
 
-      if (!cursor) { exhausted = true; break; }
+      // إذا لم تكتمل الدفعة، انتقل للتصنيف التالي داخل نفس التشغيل وأعد المحاولة
+      if (fresh.length < targetFresh && Date.now() - STARTED_AT < MAX_MS) {
+        activeCategoryHops++;
+        queryIndex = (queryIndex + 1) % totalQueries;
+        archiveQuery = queriesList[queryIndex] || archiveQuery;
+        cursor = null;
+        exhausted = false;
+        console.log(`[auto-discover] hopping to next category #${queryIndex} (${AUTO_DISCOVERY_LABELS[queryIndex] || ""}) — collected ${fresh.length}/${targetFresh}`);
+      } else {
+        break;
+      }
     }
+
 
     // إذا لم تكتمل دفعة الـ 100 من مسار scrape، املأ الباقي بقفزات عشوائية من Archive.
     // هذا يمنع الاكتفاء بعدد قليل عندما تكون الصفحات الأولى مكررة أو ضعيفة.
