@@ -867,15 +867,26 @@ serve(async (req) => {
       scrapeUrl.searchParams.set("sorts", chosenSort);
       if (cursor) scrapeUrl.searchParams.set("cursor", cursor);
 
-      const archRes = await fetch(scrapeUrl.toString(), {
-        headers: { "User-Agent": "KotobiAutoDiscovery/1.0" },
-        signal: AbortSignal.timeout(12_000),
-      });
-      if (!archRes.ok) {
-        const txt = await archRes.text();
-        throw new Error(`archive.org HTTP ${archRes.status}: ${txt.slice(0, 200)}`);
+      let archData: any = null;
+      try {
+        const archRes = await fetch(scrapeUrl.toString(), {
+          headers: { "User-Agent": "KotobiAutoDiscovery/1.0" },
+          signal: AbortSignal.timeout(12_000),
+        });
+        if (!archRes.ok) {
+          const txt = await archRes.text();
+          console.warn(`[auto-discover] archive scrape HTTP ${archRes.status} on page ${page}: ${txt.slice(0, 120)}`);
+          // عند 5xx من archive.org نُصفّر cursor ونتوقف عن مسار scrape فوراً
+          // كي يعمل مسار advancedsearch بالأسفل (fallback) ويملأ الـ 100.
+          cursor = null;
+          break;
+        }
+        archData = await archRes.json();
+      } catch (e) {
+        console.warn(`[auto-discover] archive scrape fetch error on page ${page}: ${(e as Error).message}`);
+        cursor = null;
+        break;
       }
-      let archData = await archRes.json();
       const items: Array<{ identifier: string; title: string | string[]; creator?: string | string[] }> =
         Array.isArray(archData?.items) ? archData.items : [];
       if (items.length === 0 && archData?.request_error && page === 0) {
@@ -885,6 +896,7 @@ serve(async (req) => {
       totalScanned += items.length;
 
       if (items.length === 0) { exhausted = true; break; }
+
 
       const ids = items.map((it) => it.identifier);
       const known = await filterAlreadyKnown(ids);
