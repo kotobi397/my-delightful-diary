@@ -516,9 +516,10 @@ serve(async (req) => {
       try {
         const r = await fetch(`https://archive.org/metadata/${encodeURIComponent(identifier)}`, {
           headers: { "User-Agent": "KotobiAutoDiscovery/1.0" },
-          signal: AbortSignal.timeout(8_000),
+          signal: AbortSignal.timeout(5_000),
         });
         if (!r.ok) return null;
+
         const meta = await r.json();
         const metaTitleRaw = meta?.metadata?.title;
         const metaTitle = Array.isArray(metaTitleRaw) ? metaTitleRaw[0] : metaTitleRaw;
