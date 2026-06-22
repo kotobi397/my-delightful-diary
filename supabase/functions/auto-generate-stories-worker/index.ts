@@ -1,5 +1,6 @@
-// Background worker: generates multi-chapter stories using Mistral AI
-// and assigns them to random AI bot accounts. Runs from cron every 30 min.
+// Background worker: pulls Arabic stories/texts from archive.org,
+// downloads a cover image and the full text, splits it into chapters,
+// and inserts them under a random AI bot account.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
 const corsHeaders = {
@@ -10,43 +11,40 @@ const corsHeaders = {
 
 interface Config {
   enabled: boolean;
-  topics: string[];
+  topics: string[]; // used as archive.org search queries
   chapters_per_story: number;
   stories_per_run: number;
   min_chapter_words: number;
-  model: string;
   language: string;
   total_generated: number;
 }
 
-async function mistralJson(
-  apiKey: string,
-  model: string,
-  messages: Array<{ role: string; content: string }>,
-  responseFormat: 'json_object' | 'text' = 'text',
-): Promise<string> {
-  const res = await fetch('https://api.mistral.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.85,
-      max_tokens: 4000,
-      ...(responseFormat === 'json_object'
-        ? { response_format: { type: 'json_object' } }
-        : {}),
-    }),
-  });
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`Mistral ${res.status}: ${t.slice(0, 300)}`);
+interface ArchiveDoc {
+  identifier: string;
+  title?: string;
+  creator?: string | string[];
+  description?: string | string[];
+  subject?: string | string[];
+  language?: string | string[];
+}
+
+async function fetchWithTimeout(
+  url: string,
+  ms = 12000,
+  init?: RequestInit,
+): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
   }
-  const data = await res.json();
-  return data?.choices?.[0]?.message?.content ?? '';
+}
+
+function asText(v: unknown): string {
+  if (Array.isArray(v)) return v.join(' ');
+  return typeof v === 'string' ? v : '';
 }
 
 function pick<T>(arr: T[]): T {
@@ -57,20 +55,83 @@ function wordCount(s: string): number {
   return (s || '').trim().split(/\s+/).filter(Boolean).length;
 }
 
+// Split text into N chapters at paragraph boundaries
+function splitIntoChapters(text: string, n: number, minWords: number): string[] {
+  const cleaned = text
+    .replace(/\r/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  const paragraphs = cleaned
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+  if (paragraphs.length === 0) return [];
+
+  const totalWords = paragraphs.reduce((a, p) => a + wordCount(p), 0);
+  const target = Math.max(minWords, Math.floor(totalWords / n));
+  const chapters: string[] = [];
+  let buf: string[] = [];
+  let bufWords = 0;
+  for (const p of paragraphs) {
+    buf.push(p);
+    bufWords += wordCount(p);
+    if (bufWords >= target && chapters.length < n - 1) {
+      chapters.push(buf.join('\n\n'));
+      buf = [];
+      bufWords = 0;
+    }
+  }
+  if (buf.length > 0) chapters.push(buf.join('\n\n'));
+  return chapters.filter((c) => wordCount(c) >= 50);
+}
+
+async function searchArchive(query: string, rows = 30): Promise<ArchiveDoc[]> {
+  const url = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(
+    `(${query}) AND mediatype:texts AND language:(Arabic OR ara OR arabic)`,
+  )}&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=description&fl[]=subject&fl[]=language&sort[]=random&rows=${rows}&page=1&output=json`;
+  const res = await fetchWithTimeout(url, 15000);
+  if (!res.ok) throw new Error(`archive search ${res.status}`);
+  const json = await res.json();
+  return (json?.response?.docs || []) as ArchiveDoc[];
+}
+
+// Get full text of an item via the _djvu.txt sibling (most archive.org text items have it)
+async function fetchItemText(identifier: string): Promise<string | null> {
+  // First try the metadata to find a text-like file
+  const metaRes = await fetchWithTimeout(
+    `https://archive.org/metadata/${encodeURIComponent(identifier)}`,
+    15000,
+  );
+  if (!metaRes.ok) return null;
+  const meta = await metaRes.json();
+  const files: Array<{ name: string; format?: string }> = meta?.files || [];
+
+  // Preferred text files
+  const candidates = files
+    .filter((f) => /\.(txt)$/i.test(f.name))
+    .sort((a, b) => {
+      const score = (n: string) =>
+        /_djvu\.txt$/i.test(n) ? 0 : /_text\.txt$/i.test(n) ? 1 : 2;
+      return score(a.name) - score(b.name);
+    });
+  if (candidates.length === 0) return null;
+
+  const fileName = candidates[0].name;
+  const textUrl = `https://archive.org/download/${encodeURIComponent(
+    identifier,
+  )}/${encodeURIComponent(fileName)}`;
+  const txtRes = await fetchWithTimeout(textUrl, 30000);
+  if (!txtRes.ok) return null;
+  const text = await txtRes.text();
+  return text && text.length > 500 ? text : null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
   const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const MISTRAL_API_KEY = Deno.env.get('MISTRAL_API_KEY');
-
-  if (!MISTRAL_API_KEY) {
-    return new Response(
-      JSON.stringify({ error: 'MISTRAL_API_KEY missing' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    );
-  }
-
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
 
   try {
@@ -83,31 +144,40 @@ Deno.serve(async (req) => {
     const cfg = (cfgRow || {}) as Config;
 
     if (!cfg.enabled) {
-      return new Response(
-        JSON.stringify({ skipped: true, reason: 'disabled' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
+      return new Response(JSON.stringify({ skipped: true, reason: 'disabled' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    const topics: string[] =
+    const topics =
       Array.isArray(cfg.topics) && cfg.topics.length > 0
         ? cfg.topics
-        : ['قصة قصيرة'];
+        : ['قصة', 'حكاية', 'رواية قصيرة'];
     const chaptersPerStory = Math.max(1, Math.min(20, cfg.chapters_per_story || 5));
     const storiesPerRun = Math.max(1, Math.min(5, cfg.stories_per_run || 1));
     const minWords = Math.max(100, cfg.min_chapter_words || 350);
-    const model = cfg.model || 'mistral-small-latest';
     const lang = cfg.language || 'ar';
 
-    // Get pool of active AI bots
     const { data: bots, error: botsErr } = await supabase
       .from('ai_bot_accounts')
       .select('profile_id, display_name')
       .limit(200);
     if (botsErr) throw botsErr;
-    if (!bots || bots.length === 0) {
-      throw new Error('لا يوجد حسابات بوت AI متاحة');
-    }
+    if (!bots || bots.length === 0) throw new Error('لا يوجد حسابات بوت AI متاحة');
+
+    // Existing identifiers we already imported (avoid duplicates by title prefix tag)
+    const { data: existing } = await supabase
+      .from('user_stories')
+      .select('description')
+      .ilike('description', 'archive_id:%')
+      .limit(2000);
+    const knownIds = new Set<string>(
+      (existing || [])
+        .map((r: any) =>
+          ((r.description as string) || '').split('\n')[0].replace(/^archive_id:\s*/i, '').trim(),
+        )
+        .filter(Boolean),
+    );
 
     let createdStories = 0;
     let createdChapters = 0;
@@ -115,112 +185,82 @@ Deno.serve(async (req) => {
 
     for (let s = 0; s < storiesPerRun; s++) {
       try {
-        const topic = pick(topics);
-        const bot = pick(bots);
-
-        // 1) outline + metadata
-        const planRaw = await mistralJson(
-          MISTRAL_API_KEY,
-          model,
-          [
-            {
-              role: 'system',
-              content:
-                'أنت كاتب روائي محترف. أعِد دائمًا JSON صالحًا فقط دون أي شرح خارج JSON.',
-            },
-            {
-              role: 'user',
-              content: `اقترح رواية قصيرة باللغة ${lang === 'ar' ? 'العربية الفصحى' : lang} حول الموضوع التالي: "${topic}".
-أعِد JSON بالشكل:
-{
-  "title": "عنوان جذاب وقصير",
-  "description": "ملخص في 2-3 جمل بدون حرق الأحداث",
-  "category": "تصنيف عام (مثل: رواية، مغامرة، رومانسي، خيال علمي، تاريخي، فلسفي)",
-  "chapters": [
-    { "number": 1, "title": "عنوان الفصل", "summary": "ملخص قصير لما يحدث" }
-  ]
-}
-عدد الفصول يجب أن يكون بالضبط ${chaptersPerStory}.`,
-            },
-          ],
-          'json_object',
-        );
-
-        let plan: any;
-        try {
-          plan = JSON.parse(planRaw);
-        } catch {
-          // try to extract JSON block
-          const m = planRaw.match(/\{[\s\S]*\}/);
-          plan = m ? JSON.parse(m[0]) : null;
-        }
-        if (!plan?.title || !Array.isArray(plan?.chapters)) {
-          throw new Error('خطة الرواية غير صالحة');
+        const query = pick(topics);
+        const docs = await searchArchive(query, 40);
+        if (docs.length === 0) {
+          errors.push(`لا نتائج لـ "${query}"`);
+          continue;
         }
 
-        // 2) create story row
-        const { data: story, error: storyErr } = await supabase
-          .from('user_stories')
-          .insert({
-            author_id: bot.profile_id,
-            title: String(plan.title).slice(0, 200),
-            description: plan.description ? String(plan.description).slice(0, 1000) : null,
-            category: plan.category ? String(plan.category).slice(0, 100) : null,
-            language: lang,
-            status: 'published',
-            is_public: true,
-          })
-          .select('id')
-          .single();
-        if (storyErr) throw storyErr;
-        createdStories++;
+        // Pick first not-yet-imported item that has usable text
+        let imported = false;
+        for (const doc of docs.sort(() => Math.random() - 0.5)) {
+          if (!doc.identifier || knownIds.has(doc.identifier)) continue;
 
-        // 3) generate each chapter content
-        for (let i = 0; i < Math.min(chaptersPerStory, plan.chapters.length); i++) {
-          const ch = plan.chapters[i];
-          const chNumber = ch?.number || i + 1;
-          const chTitle = (ch?.title || `الفصل ${chNumber}`).toString().slice(0, 200);
-          const chSummary = ch?.summary ? String(ch.summary) : '';
+          const text = await fetchItemText(doc.identifier).catch(() => null);
+          if (!text) continue;
 
-          try {
-            const content = await mistralJson(
-              MISTRAL_API_KEY,
-              model,
-              [
-                {
-                  role: 'system',
-                  content:
-                    'أنت كاتب روائي محترف يكتب فصولًا متماسكة بأسلوب أدبي راقي. اكتب نصًا سرديًا فقط دون عناوين أو ترقيم.',
-                },
-                {
-                  role: 'user',
-                  content: `اكتب الفصل رقم ${chNumber} بعنوان "${chTitle}" من رواية "${plan.title}".
-موضوع الرواية: ${topic}
-ملخص الفصل: ${chSummary}
-المطلوب:
-- على الأقل ${minWords} كلمة.
-- نص أدبي سردي متدفق باللغة ${lang === 'ar' ? 'العربية الفصحى' : lang}.
-- بدون عنوان أو ترقيم في البداية، النص فقط.
-- اربط الأحداث بطريقة طبيعية مع الفصول السابقة.`,
-                },
-              ],
-              'text',
-            );
-            const cleaned = content.trim();
-            await supabase.from('story_chapters').insert({
+          const chapters = splitIntoChapters(text, chaptersPerStory, minWords);
+          if (chapters.length === 0) continue;
+
+          const title = (asText(doc.title) || `قصة من Archive.org`).slice(0, 200);
+          const author = asText(doc.creator).slice(0, 100);
+          const summary = asText(doc.description).replace(/<[^>]+>/g, ' ').slice(0, 800);
+          const subject = asText(doc.subject).slice(0, 100);
+          const coverUrl = `https://archive.org/services/img/${encodeURIComponent(doc.identifier)}`;
+          const bot = pick(bots);
+
+          const description = [
+            `archive_id: ${doc.identifier}`,
+            author ? `المؤلف الأصلي: ${author}` : '',
+            summary,
+          ]
+            .filter(Boolean)
+            .join('\n');
+
+          const { data: story, error: storyErr } = await supabase
+            .from('user_stories')
+            .insert({
+              author_id: bot.profile_id,
+              title,
+              description,
+              cover_url: coverUrl,
+              category: subject || 'قصة',
+              language: lang,
+              status: 'published',
+              is_public: true,
+            })
+            .select('id')
+            .single();
+          if (storyErr) {
+            errors.push(`insert story: ${storyErr.message}`);
+            continue;
+          }
+          createdStories++;
+          knownIds.add(doc.identifier);
+
+          for (let i = 0; i < chapters.length; i++) {
+            const content = chapters[i];
+            const { error: chErr } = await supabase.from('story_chapters').insert({
               story_id: story.id,
-              chapter_number: chNumber,
-              title: chTitle,
-              content: cleaned,
+              chapter_number: i + 1,
+              title: `الفصل ${i + 1}`,
+              content,
               is_published: true,
               published_at: new Date().toISOString(),
-              word_count: wordCount(cleaned),
+              word_count: wordCount(content),
             });
-            createdChapters++;
-          } catch (e) {
-            errors.push(`فصل ${chNumber}: ${(e as Error).message}`);
+            if (chErr) {
+              errors.push(`chapter ${i + 1}: ${chErr.message}`);
+            } else {
+              createdChapters++;
+            }
           }
+          imported = true;
+          break;
         }
+
+        if (!imported) errors.push(`لم يتم العثور على عنصر صالح لـ "${query}"`);
       } catch (e) {
         errors.push((e as Error).message);
       }
@@ -231,19 +271,14 @@ Deno.serve(async (req) => {
       .update({
         total_generated: (cfg.total_generated || 0) + createdStories,
         last_run_at: new Date().toISOString(),
-        last_status: `أُنشئت ${createdStories} قصة (${createdChapters} فصل)`,
+        last_status: `أُضيفت ${createdStories} قصة (${createdChapters} فصل) من Archive.org`,
         last_error: errors.length ? errors.join(' | ').slice(0, 500) : null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', 1);
 
     return new Response(
-      JSON.stringify({
-        ok: true,
-        stories: createdStories,
-        chapters: createdChapters,
-        errors,
-      }),
+      JSON.stringify({ ok: true, stories: createdStories, chapters: createdChapters, errors }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   } catch (e) {
@@ -255,9 +290,9 @@ Deno.serve(async (req) => {
         last_error: (e as Error).message.slice(0, 500),
       })
       .eq('id', 1);
-    return new Response(
-      JSON.stringify({ error: (e as Error).message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    );
+    return new Response(JSON.stringify({ error: (e as Error).message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 });
