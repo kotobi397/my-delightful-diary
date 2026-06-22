@@ -132,7 +132,7 @@ const AutoStoryGeneratorPanel: React.FC = () => {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <BookOpen className="w-5 h-5 text-purple-500" />
-          توليد القصص تلقائياً (Mistral AI)
+          توليد القصص تلقائياً من Archive.org
           {cfg.enabled ? (
             <Badge className="bg-green-600">يعمل</Badge>
           ) : (
@@ -144,9 +144,9 @@ const AutoStoryGeneratorPanel: React.FC = () => {
         <Alert>
           <Sparkles className="w-4 h-4" />
           <AlertDescription>
-            يقوم النظام في الخلفية كل 30 دقيقة بإنشاء قصص جديدة متعددة الفصول بواسطة
-            Mistral AI، وينسبها لحسابات بوتات الذكاء الاصطناعي كأنها كُتبت من
-            مستخدمين. يعمل حتى لو كنت خارج الموقع.
+            يقوم النظام في الخلفية كل 30 دقيقة بجلب قصص حقيقية من Archive.org مع
+            صورة الغلاف، وتقسيمها إلى فصول، ونسبها لحسابات بوتات الذكاء الاصطناعي.
+            يعمل حتى لو كنت خارج الموقع.
           </AlertDescription>
         </Alert>
 
@@ -201,28 +201,19 @@ const AutoStoryGeneratorPanel: React.FC = () => {
               onBlur={() => save({ min_chapter_words: cfg.min_chapter_words })}
             />
           </div>
-          <div>
-            <Label>نموذج Mistral</Label>
-            <Input
-              value={cfg.model}
-              onChange={(e) => setCfg({ ...cfg, model: e.target.value })}
-              onBlur={() => save({ model: cfg.model })}
-              placeholder="mistral-small-latest"
-            />
-          </div>
         </div>
 
         <div>
-          <Label>قائمة المواضيع (سطر لكل موضوع)</Label>
+          <Label>كلمات البحث في Archive.org (سطر لكل عبارة)</Label>
           <Textarea
             rows={6}
             value={topicsText}
             onChange={(e) => setTopicsText(e.target.value)}
-            placeholder="رحلة في الصحراء&#10;قصة حب في الأندلس&#10;سر المكتبة القديمة"
+            placeholder="قصة&#10;حكاية شعبية&#10;رواية قصيرة&#10;أدب أطفال"
           />
           <div className="flex justify-end mt-2">
             <Button size="sm" variant="outline" onClick={saveTopics} disabled={saving}>
-              حفظ المواضيع
+              حفظ
             </Button>
           </div>
         </div>
