@@ -975,9 +975,11 @@ serve(async (req) => {
     // إذا لم تكتمل دفعة الـ 100 من مسار scrape، املأ الباقي بقفزات عشوائية من Archive.
     // هذا يمنع الاكتفاء بعدد قليل عندما تكون الصفحات الأولى مكررة أو ضعيفة.
     if (fresh.length < targetFresh && Date.now() - STARTED_AT < MAX_MS) {
-      for (let randomAttempt = 0; randomAttempt < 8 && fresh.length < targetFresh && Date.now() - STARTED_AT < MAX_MS; randomAttempt++) {
+      for (let randomAttempt = 0; randomAttempt < 20 && fresh.length < targetFresh && Date.now() - STARTED_AT < MAX_MS; randomAttempt++) {
         try {
-        const randomPage = 2 + Math.floor(Math.random() * 2500);
+        // advancedsearch لا يدعم start ضخم بشكل موثوق؛ نلتزم بصفحات 1..80 عشوائياً.
+        const randomPage = 1 + Math.floor(Math.random() * 80);
+
         const advancedUrl = new URL("https://archive.org/advancedsearch.php");
         advancedUrl.searchParams.set("q", archiveQuery);
         advancedUrl.searchParams.append("fl[]", "identifier");
