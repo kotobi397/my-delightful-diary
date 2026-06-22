@@ -168,6 +168,9 @@ async function cleanWithMistral(raw: string): Promise<string> {
     console.warn('mistral clean error', (e as Error).message);
     return raw;
   }
+}
+
+
 
 
 Deno.serve(async (req) => {
