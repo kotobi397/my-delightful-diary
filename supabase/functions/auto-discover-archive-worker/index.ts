@@ -935,7 +935,7 @@ serve(async (req) => {
       totalAlreadyKnown += skippedByTitle; // اعتبر تكرار العنوان أيضاً كـ "معروف"
 
       if (pageFresh.length > 0) {
-        const batchLabel = `auto-${new Date().toISOString().slice(0, 19)}`;
+          const batchLabel = `auto-100-${new Date().toISOString().slice(0, 19)}`;
         const rows = pageFresh.map((b) => ({
           title: b.title,
           book_file_url: b.book_file_url,
@@ -1003,7 +1003,7 @@ serve(async (req) => {
           }
           await Promise.all(Array.from({ length: 10 }, () => randomWorker()));
           if (pageFresh.length > 0) {
-            const batchLabel = `auto-random-${new Date().toISOString().slice(0, 19)}`;
+            const batchLabel = `auto-random-100-${new Date().toISOString().slice(0, 19)}`;
             const rows = pageFresh.map((b) => ({
               title: b.title,
               book_file_url: b.book_file_url,
@@ -1054,7 +1054,7 @@ serve(async (req) => {
       current_query_index: nextIndex,
       total_discovered: (config.total_discovered || 0) + inserted,
       last_run_at: new Date().toISOString(),
-      last_status: `[${currentKw}] أُضيف ${inserted} (مكرر ${totalAlreadyKnown}، بدون اسم/PDF ${totalSkippedNoTitle} من ${totalScanned} نتيجة، المعلّق: ${pending})${advanced ? ` ← التالي: [${nextKw}]` : exhausted ? " — اكتملت" : ""}`,
+      last_status: `[${currentKw}] هدف الدفعة 100 — أُضيف ${inserted} (مكرر ${totalAlreadyKnown}، بدون اسم/PDF ${totalSkippedNoTitle} من ${totalScanned} نتيجة، المعلّق: ${pending})${advanced ? ` ← التالي: [${nextKw}]` : exhausted ? " — اكتملت" : ""}`,
       last_error: null,
     }).eq("id", 1);
 
