@@ -56,15 +56,11 @@ const StoriesBrowse: React.FC = () => {
 
   useEffect(() => {
     (async () => {
-      if (!user?.id) { setIsAdmin(false); return; }
-      const { data } = await supabase
-        .from('admin_users')
-        .select('user_id')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      if (!user?.email) { setIsAdmin(false); return; }
+      const { data } = await supabase.rpc('is_admin_user', { user_email: user.email });
       setIsAdmin(!!data);
     })();
-  }, [user?.id]);
+  }, [user?.email]);
 
   const confirmDelete = async () => {
     if (!pendingDelete) return;
