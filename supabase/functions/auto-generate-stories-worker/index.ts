@@ -173,9 +173,10 @@ async function cleanWithMistral(raw: string): Promise<string> {
 
 
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+// @ts-ignore - EdgeRuntime is provided by Supabase edge-runtime
+declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
 
+async function runWorker(): Promise<{ ok: boolean; stories: number; chapters: number; errors: string[] } | { skipped: true; reason: string }> {
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
   const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
@@ -190,10 +191,9 @@ Deno.serve(async (req) => {
     const cfg = (cfgRow || {}) as Config;
 
     if (!cfg.enabled) {
-      return new Response(JSON.stringify({ skipped: true, reason: 'disabled' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return { skipped: true, reason: 'disabled' };
     }
+
 
     const topics =
       Array.isArray(cfg.topics) && cfg.topics.length > 0
