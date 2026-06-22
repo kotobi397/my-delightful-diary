@@ -260,10 +260,11 @@ export const useQuotes = () => {
   useEffect(() => {
     // جلب مرة واحدة فقط في الجلسة. عند تحديث الصفحة نعرض الكاش فوراً بدون طلب جديد.
     const alreadyFetched = sessionStorage.getItem(QUOTES_FETCHED_KEY) === '1';
-    if (!alreadyFetched) {
+    if (!alreadyFetched || initialCache.length === 0) {
       fetchQuotes(0, false);
     }
   }, []);
+
 
   return {
     quotes,
