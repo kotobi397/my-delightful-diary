@@ -170,6 +170,44 @@ async function cleanWithMistral(raw: string): Promise<string> {
   }
 }
 
+// Download archive.org cover and upload to Supabase storage; returns public URL
+async function uploadCoverToStorage(
+  supabase: any,
+  identifier: string,
+): Promise<string | null> {
+  try {
+    const srcUrl = `https://archive.org/services/img/${encodeURIComponent(identifier)}`;
+    const res = await fetchWithTimeout(srcUrl, 20000);
+    if (!res.ok) {
+      console.warn('cover download failed', res.status);
+      return null;
+    }
+    const contentType = res.headers.get('content-type') || 'image/jpeg';
+    const ext = contentType.includes('png')
+      ? 'png'
+      : contentType.includes('webp')
+        ? 'webp'
+        : 'jpg';
+    const buf = new Uint8Array(await res.arrayBuffer());
+    if (buf.byteLength < 500) return null;
+    const path = `archive-covers/${identifier}-${Date.now()}.${ext}`;
+    const { error: upErr } = await supabase.storage
+      .from('stories')
+      .upload(path, buf, { contentType, upsert: true });
+    if (upErr) {
+      console.warn('cover upload error', upErr.message);
+      return null;
+    }
+    const { data } = supabase.storage.from('stories').getPublicUrl(path);
+    return data?.publicUrl || null;
+  } catch (e) {
+    console.warn('cover upload exception', (e as Error).message);
+    return null;
+  }
+}
+
+
+
 
 
 
@@ -253,7 +291,10 @@ async function runWorker(): Promise<{ ok: boolean; stories: number; chapters: nu
           const author = asText(doc.creator).slice(0, 100);
           const summary = asText(doc.description).replace(/<[^>]+>/g, ' ').slice(0, 800);
           const subject = asText(doc.subject).slice(0, 100);
-          const coverUrl = `https://archive.org/services/img/${encodeURIComponent(doc.identifier)}`;
+          const uploadedCover = await uploadCoverToStorage(supabase, doc.identifier);
+          const coverUrl =
+            uploadedCover ||
+            `https://archive.org/services/img/${encodeURIComponent(doc.identifier)}`;
           const bot = pick(bots);
 
           const description = [
