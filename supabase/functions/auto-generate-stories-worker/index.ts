@@ -291,7 +291,10 @@ async function runWorker(): Promise<{ ok: boolean; stories: number; chapters: nu
           const author = asText(doc.creator).slice(0, 100);
           const summary = asText(doc.description).replace(/<[^>]+>/g, ' ').slice(0, 800);
           const subject = asText(doc.subject).slice(0, 100);
-          const coverUrl = `https://archive.org/services/img/${encodeURIComponent(doc.identifier)}`;
+          const uploadedCover = await uploadCoverToStorage(supabase, doc.identifier);
+          const coverUrl =
+            uploadedCover ||
+            `https://archive.org/services/img/${encodeURIComponent(doc.identifier)}`;
           const bot = pick(bots);
 
           const description = [
