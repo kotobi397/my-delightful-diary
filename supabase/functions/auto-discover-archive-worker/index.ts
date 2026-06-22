@@ -918,7 +918,7 @@ serve(async (req) => {
           continue;
         }
 
-        const CONCURRENCY = 24;
+        const CONCURRENCY = 50;
         let idx = 0;
         let skippedByTitle = 0;
         const pageFresh: Array<{ title: string; book_file_url: string; identifier: string; author: string | null; cover_image_url: string | null }> = [];
