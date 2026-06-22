@@ -1001,8 +1001,9 @@ serve(async (req) => {
     if (fresh.length < targetFresh && Date.now() - STARTED_AT < MAX_MS) {
       for (let randomAttempt = 0; randomAttempt < 20 && fresh.length < targetFresh && Date.now() - STARTED_AT < MAX_MS; randomAttempt++) {
         try {
-        // advancedsearch لا يدعم start ضخم بشكل موثوق؛ نلتزم بصفحات 1..80 عشوائياً.
-        const randomPage = 1 + Math.floor(Math.random() * 80);
+        // قفزة عشوائية عميقة لاكتشاف كتب لم نلمسها (DB فيه >31k كتاب من الصفحات الأولى).
+        const randomPage = 50 + Math.floor(Math.random() * 1500);
+
 
         const advancedUrl = new URL("https://archive.org/advancedsearch.php");
         advancedUrl.searchParams.set("q", archiveQuery);
