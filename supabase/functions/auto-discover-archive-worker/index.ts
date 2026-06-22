@@ -448,18 +448,20 @@ serve(async (req) => {
     // الشرط: يجب أن يحتوي العنوان على حروف عربية حقيقية (مجموعة الكتب عربية).
     function looksLikeRealArabicTitle(t: string): boolean {
       const s = (t || "").toString().trim();
-      if (s.length < 3 || s.length > 220) return false;
-      const arabicLetters = (s.match(/[\u0600-\u06FF]/g) || []).length;
-      // يجب أن يحتوي على حرفين عربيين على الأقل
-      if (arabicLetters < 3) return false;
-      if (arabicLetters / Math.max(s.length, 1) < 0.35) return false;
-      if (/[_.]{2,}|\d{4,}|^[\d\W_]+$/.test(s)) return false;
+      if (s.length < 3 || s.length > 240) return false;
       if (/\.(pdf|epub|djvu|txt|zip|rar|jpg|png)$/i.test(s)) return false;
       if (/^(scan|file|book|document|unknown|untitled|pdf|img|page|archive)[\s_\-\d]*$/i.test(s)) return false;
-      // رفض تكرار الحرف نفسه 5 مرات (مثل ااااااا)
       if (/(.)\1{4,}/.test(s)) return false;
-      return true;
+      if (/^[\d\W_]+$/.test(s)) return false;
+      const arabicLetters = (s.match(/[\u0600-\u06FF]/g) || []).length;
+      const latinLetters = (s.match(/[a-zA-Z]/g) || []).length;
+      // قبول العنوان إذا كان فيه ≥ حرفين عربيين، أو على الأقل ≥ 4 أحرف لاتينية ضمن
+      // اسم منطقي يحتوي مسافة (كي لا نقبل أسماء ملفات Latin مدمجة).
+      if (arabicLetters >= 2) return true;
+      if (latinLetters >= 4 && /\s/.test(s) && s.length <= 180) return true;
+      return false;
     }
+
 
     function cleanArchiveTitle(t: string): string {
       return (t || "")
