@@ -103,11 +103,12 @@ const AutoStoryGeneratorPanel: React.FC = () => {
         toast({ title: 'تم التخطي', description: data?.reason || 'معطّل' });
       } else {
         toast({
-          title: 'اكتمل التشغيل',
-          description: `أُنشئت ${data?.stories || 0} قصة بـ ${data?.chapters || 0} فصل`,
+          title: 'بدأ التوليد في الخلفية',
+          description: 'سيتم جلب القصص وتنظيفها عبر Mistral AI. تحدّث الحالة بعد دقيقة أو دقيقتين.',
         });
       }
       await load();
+
     } catch (e: any) {
       toast({ title: 'فشل التشغيل', description: e.message, variant: 'destructive' });
     } finally {

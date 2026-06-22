@@ -127,9 +127,56 @@ async function fetchItemText(identifier: string): Promise<string | null> {
   return text && text.length > 500 ? text : null;
 }
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+// Use Mistral AI to clean OCR/text artifacts and fix Arabic distortions
+async function cleanWithMistral(raw: string): Promise<string> {
+  const apiKey = Deno.env.get('MISTRAL_API_KEY');
+  if (!apiKey) return raw;
+  // Mistral has token limits; trim input to ~8k chars to keep one chapter safe
+  const input = raw.length > 8000 ? raw.slice(0, 8000) : raw;
+  try {
+    const res = await fetchWithTimeout(
+      'https://api.mistral.ai/v1/chat/completions',
+      45000,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'mistral-small-latest',
+          temperature: 0.2,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'أنت محرر لغوي عربي خبير. مهمتك تنظيف نص مأخوذ من OCR لـ Archive.org وإصلاح كل التشوهات: حروف ملصقة، أحرف لاتينية غريبة وسط الكلمات، فراغات زائدة، أرقام صفحات عشوائية، رموز غير مفهومة، أخطاء إملائية واضحة. لا تختصر القصة ولا تحذف فقرات، فقط أعد كتابتها بعربية فصحى سليمة ومضبوطة. أعد النص النظيف مباشرة بدون أي تعليق أو مقدمة.',
+            },
+            { role: 'user', content: input },
+          ],
+        }),
+      },
+    );
+    if (!res.ok) {
+      console.warn('mistral clean failed', res.status, await res.text().catch(() => ''));
+      return raw;
+    }
+    const j = await res.json();
+    const txt = j?.choices?.[0]?.message?.content;
+    return typeof txt === 'string' && txt.trim().length > 100 ? txt.trim() : raw;
+  } catch (e) {
+    console.warn('mistral clean error', (e as Error).message);
+    return raw;
+  }
+}
 
+
+
+
+// @ts-ignore - EdgeRuntime is provided by Supabase edge-runtime
+declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
+
+async function runWorker(): Promise<{ ok: boolean; stories: number; chapters: number; errors: string[] } | { skipped: true; reason: string }> {
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
   const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
@@ -144,10 +191,9 @@ Deno.serve(async (req) => {
     const cfg = (cfgRow || {}) as Config;
 
     if (!cfg.enabled) {
-      return new Response(JSON.stringify({ skipped: true, reason: 'disabled' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return { skipped: true, reason: 'disabled' };
     }
+
 
     const topics =
       Array.isArray(cfg.topics) && cfg.topics.length > 0
@@ -240,15 +286,15 @@ Deno.serve(async (req) => {
           knownIds.add(doc.identifier);
 
           for (let i = 0; i < chapters.length; i++) {
-            const content = chapters[i];
+            const cleaned = await cleanWithMistral(chapters[i]);
             const { error: chErr } = await supabase.from('story_chapters').insert({
               story_id: story.id,
               chapter_number: i + 1,
               title: `الفصل ${i + 1}`,
-              content,
+              content: cleaned,
               is_published: true,
               published_at: new Date().toISOString(),
-              word_count: wordCount(content),
+              word_count: wordCount(cleaned),
             });
             if (chErr) {
               errors.push(`chapter ${i + 1}: ${chErr.message}`);
@@ -256,6 +302,7 @@ Deno.serve(async (req) => {
               createdChapters++;
             }
           }
+
           imported = true;
           break;
         }
@@ -277,10 +324,7 @@ Deno.serve(async (req) => {
       })
       .eq('id', 1);
 
-    return new Response(
-      JSON.stringify({ ok: true, stories: createdStories, chapters: createdChapters, errors }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    );
+    return { ok: true, stories: createdStories, chapters: createdChapters, errors };
   } catch (e) {
     await supabase
       .from('auto_story_config')
@@ -290,9 +334,23 @@ Deno.serve(async (req) => {
         last_error: (e as Error).message.slice(0, 500),
       })
       .eq('id', 1);
-    return new Response(JSON.stringify({ error: (e as Error).message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return { ok: false, stories: 0, chapters: 0, errors: [(e as Error).message] };
   }
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+
+  // Run in background so the request returns immediately;
+  // Mistral cleanup of multiple chapters can take >60s.
+  const task = runWorker().catch((e) => console.error('worker error', e));
+  if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime?.waitUntil) {
+    EdgeRuntime.waitUntil(task);
+  }
+
+  return new Response(
+    JSON.stringify({ started: true, message: 'يتم التوليد في الخلفية، تابع الحالة من لوحة الإدارة.' }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+  );
 });
+
