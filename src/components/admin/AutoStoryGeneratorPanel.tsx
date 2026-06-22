@@ -132,7 +132,7 @@ const AutoStoryGeneratorPanel: React.FC = () => {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <BookOpen className="w-5 h-5 text-purple-500" />
-          توليد القصص تلقائياً (Mistral AI)
+          توليد القصص تلقائياً من Archive.org
           {cfg.enabled ? (
             <Badge className="bg-green-600">يعمل</Badge>
           ) : (
@@ -144,9 +144,9 @@ const AutoStoryGeneratorPanel: React.FC = () => {
         <Alert>
           <Sparkles className="w-4 h-4" />
           <AlertDescription>
-            يقوم النظام في الخلفية كل 30 دقيقة بإنشاء قصص جديدة متعددة الفصول بواسطة
-            Mistral AI، وينسبها لحسابات بوتات الذكاء الاصطناعي كأنها كُتبت من
-            مستخدمين. يعمل حتى لو كنت خارج الموقع.
+            يقوم النظام في الخلفية كل 30 دقيقة بجلب قصص حقيقية من Archive.org مع
+            صورة الغلاف، وتقسيمها إلى فصول، ونسبها لحسابات بوتات الذكاء الاصطناعي.
+            يعمل حتى لو كنت خارج الموقع.
           </AlertDescription>
         </Alert>
 
