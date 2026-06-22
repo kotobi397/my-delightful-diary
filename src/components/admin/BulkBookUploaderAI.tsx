@@ -603,7 +603,6 @@ https://archive.org/download/.../روائع من التاريخ العثماني
 
       <AutoDiscoverPanel />
 
-      <AutoStoryGeneratorPanel />
 
       <Card className="border-primary/40">
         <CardHeader>
