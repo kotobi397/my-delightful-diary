@@ -326,11 +326,18 @@ serve(async (req) => {
       { label: "روايات تاريخية", terms: ["روايات تاريخية", "Historical fiction"] },
       { label: "تراث", terms: ["تراث", "Heritage", "Classical Arabic"] },
     ];
+    function quoteArchiveTerm(t: string): string {
+      return `"${t.replace(/["()]/g, " ").replace(/\s+/g, " ").trim()}"`;
+    }
+
     function buildSubjectQuery(terms: string[]): string {
       const parts = terms
         .map((t) => t.trim())
         .filter(Boolean)
-        .map((t) => /[\u0600-\u06FF]/.test(t) ? `subject:"${t}"` : `subject:(${t})`);
+        .flatMap((t) => {
+          const q = quoteArchiveTerm(t);
+          return [`subject:${q}`, `title:${q}`, `description:${q}`, q];
+        });
       return `(${parts.join(" OR ")}) AND ${ARABIC_BASE}`;
     }
     const AUTO_DISCOVERY_QUERIES: string[] = SUBJECT_CATEGORIES.map((c) => buildSubjectQuery(c.terms));
@@ -355,12 +362,12 @@ serve(async (req) => {
     }
 
     const scrapeCount = 100; // archive.org scrape يتطلب count >= 100
-    // ارفع السقف إلى 40 كتاباً في كل دورة لأن المسار أصبح يعتمد فقط على Archive (أسرع وأخف).
-    const batchSize = Math.min(Math.max(config.batch_size || 40, 10), 40);
+    // المطلوب: إضافة 100 كتاب كامل في كل تشغيل قدر الإمكان، لا 40 ولا دفعات صغيرة.
+    const batchSize = 100;
     const queueRoom = Math.max(0, HARD_CAP - pending);
     // الهدف: عدد الكتب الجديدة التي نريد إضافتها هذا التشغيل
     // نضيف دفعات كبيرة كل تشغيل، وcron سيعيد التشغيل حتى عندما يكون المستخدم خارج التطبيق.
-    const targetFresh = Math.max(1, Math.min(batchSize, 40, queueRoom));
+    const targetFresh = Math.max(1, Math.min(batchSize, queueRoom));
 
     // كشف العناوين العشوائية / أسماء الملفات / السلاسل غير المفهومة
     function isRealTitle(t: string | null | undefined, identifier: string): boolean {
@@ -838,8 +845,8 @@ serve(async (req) => {
     const shouldResetCursor = !config.cursor || Math.random() < 0.20;
 
     const STARTED_AT = Date.now();
-    const MAX_MS = 90_000;
-    const MAX_PAGES = 5;
+    const MAX_MS = 115_000;
+    const MAX_PAGES = 15;
     let cursor: string | null = shouldResetCursor ? null : config.cursor;
     let totalScanned = 0;
     let totalAlreadyKnown = 0;
@@ -888,7 +895,7 @@ serve(async (req) => {
         continue;
       }
 
-      const CONCURRENCY = 3;
+      const CONCURRENCY = 24;
       let idx = 0;
       let skippedByTitle = 0;
       const pageFresh: Array<{ title: string; book_file_url: string; identifier: string; author: string | null; cover_image_url: string | null }> = [];
@@ -928,7 +935,7 @@ serve(async (req) => {
       totalAlreadyKnown += skippedByTitle; // اعتبر تكرار العنوان أيضاً كـ "معروف"
 
       if (pageFresh.length > 0) {
-        const batchLabel = `auto-${new Date().toISOString().slice(0, 19)}`;
+          const batchLabel = `auto-100-${new Date().toISOString().slice(0, 19)}`;
         const rows = pageFresh.map((b) => ({
           title: b.title,
           book_file_url: b.book_file_url,
@@ -953,10 +960,11 @@ serve(async (req) => {
       if (!cursor) { exhausted = true; break; }
     }
 
-    // إذا كانت صفحة scrape الحالية كلها مكررة، اقفز إلى صفحة عشوائية من Archive.
-    // هذا يمنع الدوران حول أول 100 نتيجة قديمة موجودة لدينا مسبقاً.
-    if (fresh.length === 0 && Date.now() - STARTED_AT < MAX_MS) {
-      try {
+    // إذا لم تكتمل دفعة الـ 100 من مسار scrape، املأ الباقي بقفزات عشوائية من Archive.
+    // هذا يمنع الاكتفاء بعدد قليل عندما تكون الصفحات الأولى مكررة أو ضعيفة.
+    if (fresh.length < targetFresh && Date.now() - STARTED_AT < MAX_MS) {
+      for (let randomAttempt = 0; randomAttempt < 8 && fresh.length < targetFresh && Date.now() - STARTED_AT < MAX_MS; randomAttempt++) {
+        try {
         const randomPage = 2 + Math.floor(Math.random() * 2500);
         const advancedUrl = new URL("https://archive.org/advancedsearch.php");
         advancedUrl.searchParams.set("q", archiveQuery);
@@ -994,9 +1002,9 @@ serve(async (req) => {
               pageFresh.push({ title: book.title, book_file_url: book.url, identifier: it.identifier, author: book.author, cover_image_url: book.coverUrl });
             }
           }
-          await Promise.all(Array.from({ length: 3 }, () => randomWorker()));
+          await Promise.all(Array.from({ length: 24 }, () => randomWorker()));
           if (pageFresh.length > 0) {
-            const batchLabel = `auto-random-${new Date().toISOString().slice(0, 19)}`;
+            const batchLabel = `auto-random-100-${new Date().toISOString().slice(0, 19)}`;
             const rows = pageFresh.map((b) => ({
               title: b.title,
               book_file_url: b.book_file_url,
@@ -1013,8 +1021,9 @@ serve(async (req) => {
             else console.warn("[auto-discover random] insert error:", insErr.message);
           }
         }
-      } catch (e) {
-        console.warn("[auto-discover random] fallback failed", (e as Error).message);
+        } catch (e) {
+          console.warn("[auto-discover random] fallback failed", (e as Error).message);
+        }
       }
     }
 
@@ -1047,7 +1056,7 @@ serve(async (req) => {
       current_query_index: nextIndex,
       total_discovered: (config.total_discovered || 0) + inserted,
       last_run_at: new Date().toISOString(),
-      last_status: `[${currentKw}] أُضيف ${inserted} (مكرر ${totalAlreadyKnown}، بدون اسم/PDF ${totalSkippedNoTitle} من ${totalScanned} نتيجة، المعلّق: ${pending})${advanced ? ` ← التالي: [${nextKw}]` : exhausted ? " — اكتملت" : ""}`,
+      last_status: `[${currentKw}] هدف الدفعة 100 — أُضيف ${inserted} (مكرر ${totalAlreadyKnown}، بدون اسم/PDF ${totalSkippedNoTitle} من ${totalScanned} نتيجة، المعلّق: ${pending})${advanced ? ` ← التالي: [${nextKw}]` : exhausted ? " — اكتملت" : ""}`,
       last_error: null,
     }).eq("id", 1);
 
