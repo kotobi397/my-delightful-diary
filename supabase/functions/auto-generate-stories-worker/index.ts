@@ -127,6 +127,49 @@ async function fetchItemText(identifier: string): Promise<string | null> {
   return text && text.length > 500 ? text : null;
 }
 
+// Use Mistral AI to clean OCR/text artifacts and fix Arabic distortions
+async function cleanWithMistral(raw: string): Promise<string> {
+  const apiKey = Deno.env.get('MISTRAL_API_KEY');
+  if (!apiKey) return raw;
+  // Mistral has token limits; trim input to ~8k chars to keep one chapter safe
+  const input = raw.length > 8000 ? raw.slice(0, 8000) : raw;
+  try {
+    const res = await fetchWithTimeout(
+      'https://api.mistral.ai/v1/chat/completions',
+      45000,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'mistral-small-latest',
+          temperature: 0.2,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'أنت محرر لغوي عربي خبير. مهمتك تنظيف نص مأخوذ من OCR لـ Archive.org وإصلاح كل التشوهات: حروف ملصقة، أحرف لاتينية غريبة وسط الكلمات، فراغات زائدة، أرقام صفحات عشوائية، رموز غير مفهومة، أخطاء إملائية واضحة. لا تختصر القصة ولا تحذف فقرات، فقط أعد كتابتها بعربية فصحى سليمة ومضبوطة. أعد النص النظيف مباشرة بدون أي تعليق أو مقدمة.',
+            },
+            { role: 'user', content: input },
+          ],
+        }),
+      },
+    );
+    if (!res.ok) {
+      console.warn('mistral clean failed', res.status, await res.text().catch(() => ''));
+      return raw;
+    }
+    const j = await res.json();
+    const txt = j?.choices?.[0]?.message?.content;
+    return typeof txt === 'string' && txt.trim().length > 100 ? txt.trim() : raw;
+  } catch (e) {
+    console.warn('mistral clean error', (e as Error).message);
+    return raw;
+  }
+
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
