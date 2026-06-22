@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Settings, Trophy } from 'lucide-react';
+import { LibraryBig, Settings, Trophy } from 'lucide-react';
 import HomeIcon from '@/components/icons/HomeIcon';
 import UploadBookIcon from '@/components/icons/UploadBookIcon';
 import QuoteIcon from '@/components/icons/QuoteIcon';
@@ -51,6 +51,7 @@ const BottomNavigation: React.FC = () => {
   const items = [
     { key: 'home', label: 'الرئيسية', icon: <HomeIcon className="h-[22px] w-[22px]" />, path: '/' },
     { key: 'upload', label: 'انشر', icon: <UploadBookIcon className="h-[22px] w-[22px]" />, path: '/upload-book' },
+    { key: 'stories', label: 'قصص', icon: <LibraryBig className="h-[22px] w-[22px]" />, path: '/stories' },
     ...(user && !adminCheckLoading && isAdmin
       ? [{ key: 'admin', label: 'إدارة', icon: <Settings className="h-[22px] w-[22px]" />, path: '/admin/books' }]
       : []),

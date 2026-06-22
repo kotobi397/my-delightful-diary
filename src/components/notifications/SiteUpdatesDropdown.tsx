@@ -10,6 +10,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useSiteUpdates } from '@/hooks/useSiteUpdates';
+import { cn } from '@/lib/utils';
 import kotobiTeamLogo from '@/assets/kotobi-team-logo.png';
 
 interface SiteUpdatesDropdownProps {
@@ -19,6 +20,27 @@ interface SiteUpdatesDropdownProps {
 const SiteUpdatesDropdown: React.FC<SiteUpdatesDropdownProps> = ({ children }) => {
   const [isOpen, setIsOpen] = useState(false);
   const { updates, loading, hasUnread, markAllAsRead, ensureFetched } = useSiteUpdates();
+
+  const trigger = React.isValidElement(children)
+    ? React.cloneElement(children as React.ReactElement<{ className?: string; children?: React.ReactNode }>, {
+        className: cn((children.props as { className?: string }).className, 'relative'),
+        children: (
+          <>
+            {(children.props as { children?: React.ReactNode }).children}
+            {hasUnread && (
+              <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full border-2 border-background bg-destructive animate-pulse" />
+            )}
+          </>
+        ),
+      })
+    : (
+      <button type="button" className="relative bg-transparent border-0 p-0 cursor-pointer">
+        {children}
+        {hasUnread && (
+          <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full border-2 border-background bg-destructive animate-pulse" />
+        )}
+      </button>
+    );
 
   const handleOpenChange = async (open: boolean) => {
     setIsOpen(open);
@@ -51,12 +73,7 @@ const SiteUpdatesDropdown: React.FC<SiteUpdatesDropdownProps> = ({ children }) =
   return (
     <Popover open={isOpen} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
-        <button type="button" className="relative bg-transparent border-0 p-0 cursor-pointer">
-          {children}
-          {hasUnread && (
-            <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-background animate-pulse" />
-          )}
-        </button>
+        {trigger}
       </PopoverTrigger>
 
       {/* نافذة منسدلة شفافة */}

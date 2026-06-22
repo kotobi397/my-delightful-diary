@@ -38,13 +38,17 @@ const StoriesBrowse: React.FC = () => {
 
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('user_stories')
       .select('id,title,description,cover_url,category,status,views_count,created_at')
       .eq('is_public', true)
       .order('created_at', { ascending: false })
       .limit(200);
-    setStories((data || []) as StoryRow[]);
+    if (error) {
+      toast({ title: 'تعذر تحميل القصص', description: error.message, variant: 'destructive' });
+    } else {
+      setStories((data || []) as StoryRow[]);
+    }
     setLoading(false);
   };
 
@@ -52,15 +56,11 @@ const StoriesBrowse: React.FC = () => {
 
   useEffect(() => {
     (async () => {
-      if (!user?.id) { setIsAdmin(false); return; }
-      const { data } = await supabase
-        .from('admin_users')
-        .select('user_id')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      if (!user?.email) { setIsAdmin(false); return; }
+      const { data } = await supabase.rpc('is_admin_user', { user_email: user.email });
       setIsAdmin(!!data);
     })();
-  }, [user?.id]);
+  }, [user?.email]);
 
   const confirmDelete = async () => {
     if (!pendingDelete) return;
@@ -129,6 +129,7 @@ const StoriesBrowse: React.FC = () => {
                     variant="destructive"
                     className="absolute top-1 left-1 h-7 w-7 shadow-md z-10"
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); setPendingDelete(s); }}
+                    aria-label="حذف القصة"
                     title="حذف القصة (إدارة)"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
