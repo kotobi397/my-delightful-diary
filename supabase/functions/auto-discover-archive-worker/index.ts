@@ -326,11 +326,18 @@ serve(async (req) => {
       { label: "روايات تاريخية", terms: ["روايات تاريخية", "Historical fiction"] },
       { label: "تراث", terms: ["تراث", "Heritage", "Classical Arabic"] },
     ];
+    function quoteArchiveTerm(t: string): string {
+      return `"${t.replace(/["()]/g, " ").replace(/\s+/g, " ").trim()}"`;
+    }
+
     function buildSubjectQuery(terms: string[]): string {
       const parts = terms
         .map((t) => t.trim())
         .filter(Boolean)
-        .map((t) => /[\u0600-\u06FF]/.test(t) ? `subject:"${t}"` : `subject:(${t})`);
+        .flatMap((t) => {
+          const q = quoteArchiveTerm(t);
+          return [`subject:${q}`, `title:${q}`, `description:${q}`, q];
+        });
       return `(${parts.join(" OR ")}) AND ${ARABIC_BASE}`;
     }
     const AUTO_DISCOVERY_QUERIES: string[] = SUBJECT_CATEGORIES.map((c) => buildSubjectQuery(c.terms));
@@ -355,12 +362,12 @@ serve(async (req) => {
     }
 
     const scrapeCount = 100; // archive.org scrape يتطلب count >= 100
-    // ارفع السقف إلى 40 كتاباً في كل دورة لأن المسار أصبح يعتمد فقط على Archive (أسرع وأخف).
-    const batchSize = Math.min(Math.max(config.batch_size || 40, 10), 40);
+    // المطلوب: إضافة 100 كتاب كامل في كل تشغيل قدر الإمكان، لا 40 ولا دفعات صغيرة.
+    const batchSize = 100;
     const queueRoom = Math.max(0, HARD_CAP - pending);
     // الهدف: عدد الكتب الجديدة التي نريد إضافتها هذا التشغيل
     // نضيف دفعات كبيرة كل تشغيل، وcron سيعيد التشغيل حتى عندما يكون المستخدم خارج التطبيق.
-    const targetFresh = Math.max(1, Math.min(batchSize, 40, queueRoom));
+    const targetFresh = Math.max(1, Math.min(batchSize, queueRoom));
 
     // كشف العناوين العشوائية / أسماء الملفات / السلاسل غير المفهومة
     function isRealTitle(t: string | null | undefined, identifier: string): boolean {
