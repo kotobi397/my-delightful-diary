@@ -633,6 +633,9 @@ const AdminBooks: React.FC = () => {
     });
   };
 
+  const bookReviewTabs = ['pending', 'pending_edit', 'rejected'];
+  const shouldBlockForBookLoading = loading && bookReviewTabs.includes(activeTab);
+
   // أثناء تحميل AuthContext أو التحقق من الصلاحيات، نظهر شاشة التحميل
   if (authLoading || checkingAdmin) {
     return (
@@ -683,7 +686,7 @@ const AdminBooks: React.FC = () => {
     );
   }
 
-  if (loading) {
+  if (shouldBlockForBookLoading) {
     return (
       <div className="min-h-screen flex flex-col">
         <Navbar />
