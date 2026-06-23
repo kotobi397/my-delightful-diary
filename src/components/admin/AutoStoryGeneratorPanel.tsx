@@ -32,18 +32,28 @@ const AutoStoryGeneratorPanel: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase
+    setLoadError(null);
+    const { data, error } = await supabase
       .from('auto_story_config')
       .select('*')
       .eq('id', 1)
       .maybeSingle();
+    if (error) {
+      setLoadError(error.message);
+      setCfg(null);
+      setLoading(false);
+      return;
+    }
     if (data) {
       const c = data as unknown as StoryConfig;
       setCfg(c);
       setTopicsText((c.topics || []).join('\n'));
+    } else {
+      setLoadError('لم يتم العثور على إعدادات القصص التلقائية في قاعدة البيانات.');
     }
     setLoading(false);
   };
@@ -126,7 +136,25 @@ const AutoStoryGeneratorPanel: React.FC = () => {
     );
   }
 
-  if (!cfg) return null;
+  if (loadError || !cfg) {
+    return (
+      <Card className="border-destructive/40">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-destructive">
+            <AlertDescription className="contents">تعذر تحميل القصص التلقائية</AlertDescription>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Alert variant="destructive">
+            <AlertDescription>{loadError || 'حدث خطأ غير معروف أثناء تحميل الإعدادات.'}</AlertDescription>
+          </Alert>
+          <Button variant="outline" onClick={load}>
+            <RefreshCw className="w-4 h-4 mr-2" /> إعادة المحاولة
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="border-2 border-purple-500/30">
