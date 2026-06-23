@@ -1,0 +1,1 @@
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.auto_story_config TO authenticated; GRANT ALL ON public.auto_story_config TO service_role;
